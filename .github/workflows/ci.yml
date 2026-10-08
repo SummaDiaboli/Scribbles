@@ -1,0 +1,45 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+    branches: [main]
+
+jobs:
+  unit-integration:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+      - run: dotnet restore Scribbles.sln
+      - run: dotnet test tests/Scribbles.Unit.Tests/Scribbles.Unit.Tests.csproj --collect:"XPlat Code Coverage" --results-directory coverage/unit
+      - run: dotnet test tests/Scribbles.Integration.Tests/Scribbles.Integration.Tests.csproj --no-build
+      - name: Coverage gate (90%+ on Core)
+        shell: pwsh
+        run: |
+          dotnet tool install -g dotnet-reportgenerator-globaltool
+          reportgenerator -reports:coverage/unit/**/coverage.cobertura.xml -targetdir:coverage/report -reporttypes:Cobertura
+          $xml = [xml](Get-Content (Get-ChildItem coverage/report/Cobertura.xml).FullName)
+          $rate = [double]$xml.coverage.'line-rate' * 100
+          Write-Host "Line coverage: $rate%"
+          if ($rate -lt 90) { Write-Error "Coverage $rate% below 90% gate"; exit 1 }
+
+  e2e:
+    if: github.base_ref == 'main' || startsWith(github.ref, 'refs/tags/v')
+    runs-on: windows-latest
+    env:
+      SCRIBBLES_INTERACTIVE_E2E: 1 # runners have a dedicated desktop; never set this on a dev machine
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+      - run: dotnet publish Scribbles.App/Scribbles.App.csproj -c Release
+      - run: dotnet test tests/Scribbles.E2E.Tests/Scribbles.E2E.Tests.csproj
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: e2e-screenshots
+          path: "**/*.png"

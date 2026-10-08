@@ -1,0 +1,148 @@
+﻿<Window x:Class="Scribbles.App.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Scribbles" Height="700" Width="1000"
+        Background="{DynamicResource AppBackground}"
+        Foreground="{DynamicResource AppForeground}">
+    <Window.InputBindings>
+        <KeyBinding Key="O" Modifiers="Ctrl" Command="{Binding OpenPdfCommand}"/>
+        <KeyBinding Key="S" Modifiers="Ctrl" Command="{Binding SaveCommand}"/>
+        <KeyBinding Key="OemPlus" Modifiers="Ctrl" Command="{Binding ZoomInCommand}"/>
+        <KeyBinding Key="OemMinus" Modifiers="Ctrl" Command="{Binding ZoomOutCommand}"/>
+        <KeyBinding Key="Z" Modifiers="Ctrl" Command="{Binding UndoCommand}"/>
+        <KeyBinding Key="Y" Modifiers="Ctrl" Command="{Binding RedoCommand}"/>
+        <KeyBinding Key="Delete" Command="{Binding DeleteSelectionCommand}"/>
+    </Window.InputBindings>
+    <Window.Resources>
+    </Window.Resources>
+    <DockPanel>
+        <Menu DockPanel.Dock="Top" Background="{DynamicResource AppSurface}" Foreground="{DynamicResource AppForeground}">
+            <MenuItem Header="_File">
+                <MenuItem Header="_Open PDF…" Command="{Binding OpenPdfCommand}" InputGestureText="Ctrl+O"/>
+                <MenuItem Header="_Save" Command="{Binding SaveCommand}" InputGestureText="Ctrl+S"/>
+                <MenuItem Header="Save _As…" Click="SaveAs_Click"/>
+                <Separator/>
+                <MenuItem Header="_Recover autosave…" Click="Recover_Click"/>
+                <Separator/>
+                <MenuItem Header="_Settings…" Click="Settings_Click"/>
+                <Separator/>
+                <MenuItem Header="E_xit" Click="Exit_Click"/>
+            </MenuItem>
+            <MenuItem Header="_View">
+                <MenuItem Header="Zoom _In" Command="{Binding ZoomInCommand}" InputGestureText="Ctrl++"/>
+                <MenuItem Header="Zoom _Out" Command="{Binding ZoomOutCommand}" InputGestureText="Ctrl+-"/>
+                <Separator/>
+                <MenuItem Header="_Theme">
+                    <MenuItem Header="_Light" Command="{Binding SetThemeCommand}" CommandParameter="Light"/>
+                    <MenuItem Header="_Dark" Command="{Binding SetThemeCommand}" CommandParameter="Dark"/>
+                    <MenuItem Header="_System" Command="{Binding SetThemeCommand}" CommandParameter="System"/>
+                </MenuItem>
+            </MenuItem>
+                <MenuItem Header="_Edit">
+                    <MenuItem x:Name="UndoMenuItem" Header="_Undo" Command="{Binding UndoCommand}" InputGestureText="Ctrl+Z" IsEnabled="False"/>
+                    <MenuItem x:Name="RedoMenuItem" Header="_Redo" Command="{Binding RedoCommand}" InputGestureText="Ctrl+Y" IsEnabled="False"/>
+                    <Separator/>
+                    <MenuItem Header="_Delete selection" Command="{Binding DeleteSelectionCommand}" InputGestureText="Del"/>
+                </MenuItem>
+        </Menu>
+
+        <Border DockPanel.Dock="Top" Background="{DynamicResource AppSurface}" BorderBrush="{DynamicResource AppBorder}" BorderThickness="0,0,0,1">
+            <ToolBar Background="Transparent" Foreground="{DynamicResource AppForeground}" Loaded="ToolBar_Loaded">
+                    <Button Command="{Binding OpenPdfCommand}" ToolTip="Open PDF (Ctrl+O)" Style="{StaticResource IconButton}">
+                        <Image Source="{StaticResource IconFolderOpen}" Width="18" Height="18"/>
+                    </Button>
+                    <Button Command="{Binding SaveCommand}" ToolTip="Save (Ctrl+S)" Style="{StaticResource IconButton}">
+                        <Image Source="{StaticResource IconSave}" Width="18" Height="18"/>
+                    </Button>
+                    <Separator/>
+                    <Button Command="{Binding ZoomOutCommand}" ToolTip="Zoom out (Ctrl+-)" Style="{StaticResource IconButton}">
+                        <Image Source="{StaticResource IconZoomOut}" Width="18" Height="18"/>
+                    </Button>
+                    <ComboBox Width="76" VerticalAlignment="Center" IsEditable="True"
+                              ItemsSource="{Binding ZoomPresets}" Text="{Binding ZoomLabel, UpdateSourceTrigger=LostFocus}"
+                              ToolTip="Zoom level — pick a preset or type a value (25–400)"/>
+                    <Button Command="{Binding ZoomInCommand}" ToolTip="Zoom in (Ctrl++)" Style="{StaticResource IconButton}">
+                        <Image Source="{StaticResource IconZoomIn}" Width="18" Height="18"/>
+                    </Button>
+                    <Separator/>
+                    <RadioButton x:Name="PenToolButton" GroupName="PenTools" IsChecked="True" ToolTip="Pen" Style="{StaticResource IconToggle}" Click="Tool_Click" Tag="Pen">
+                        <Image Source="{StaticResource IconPencil}" Width="18" Height="18"/>
+                    </RadioButton>
+                    <RadioButton x:Name="HighlighterToolButton" GroupName="PenTools" ToolTip="Highlighter" Style="{StaticResource IconToggle}" Click="Tool_Click" Tag="Highlighter">
+                        <Image Source="{StaticResource IconHighlighter}" Width="18" Height="18"/>
+                    </RadioButton>
+                    <RadioButton GroupName="PenTools" ToolTip="Eraser (whole strokes)" Style="{StaticResource IconToggle}" Click="Tool_Click" Tag="StrokeEraser">
+                        <Image Source="{StaticResource IconEraser}" Width="18" Height="18"/>
+                    </RadioButton>
+                    <RadioButton GroupName="PenTools" ToolTip="Partial eraser" Style="{StaticResource IconToggle}" Click="Tool_Click" Tag="PointEraser">
+                        <Image Source="{StaticResource IconEraser}" Width="18" Height="18" Opacity="0.55"/>
+                    </RadioButton>
+                    <RadioButton GroupName="PenTools" ToolTip="Lasso select — move, resize, recolor, delete" Style="{StaticResource IconToggle}" Click="Tool_Click" Tag="Lasso">
+                        <Image Source="{StaticResource IconLasso}" Width="18" Height="18"/>
+                    </RadioButton>
+                    <Separator/>
+                    <StackPanel x:Name="PalettePanel" Orientation="Horizontal" VerticalAlignment="Center"/>
+                    <Button ToolTip="Custom color…" Style="{StaticResource IconButton}" Click="Picker_Click">
+                        <Image Source="{StaticResource IconPalette}" Width="18" Height="18"/>
+                    </Button>
+                    <ComboBox x:Name="FamilyBox" Width="92" VerticalAlignment="Center" ToolTip="Pen stroke" SelectionChanged="FamilyBox_SelectionChanged">
+                        <ComboBoxItem Content="Ballpoint" Tag="Ballpoint"/>
+                        <ComboBoxItem Content="Fountain" Tag="Fountain" IsSelected="True"/>
+                    </ComboBox>
+                    <ComboBox x:Name="SizeBox" Width="60" VerticalAlignment="Center" IsEditable="True" ToolTip="Thickness in pt (1–20)" SelectionChanged="SizeBox_SelectionChanged">
+                        <ComboBoxItem Content="S" Tag="2"/>
+                        <ComboBoxItem Content="M" Tag="3.5" IsSelected="True"/>
+                        <ComboBoxItem Content="L" Tag="5"/>
+                    </ComboBox>
+                    <Separator/>
+                    <Button x:Name="UndoButton" ToolTip="Undo (Ctrl+Z)" Style="{StaticResource IconButton}" Click="Undo_Click" IsEnabled="False">
+                        <Image Source="{StaticResource IconUndo}" Width="18" Height="18"/>
+                    </Button>
+                    <Button x:Name="RedoButton" ToolTip="Redo (Ctrl+Y)" Style="{StaticResource IconButton}" Click="Redo_Click" IsEnabled="False">
+                        <Image Source="{StaticResource IconRedo}" Width="18" Height="18"/>
+                    </Button>
+                    <Button ToolTip="Delete selection (Del)" Style="{StaticResource IconButton}" Click="DeleteSelection_Click">
+                        <Image Source="{StaticResource IconTrash}" Width="18" Height="18"/>
+                    </Button>
+            </ToolBar>
+        </Border>
+
+        <StatusBar DockPanel.Dock="Bottom" Background="{DynamicResource AppSurface}" Foreground="{DynamicResource AppForeground}">
+            <StatusBarItem>
+                <TextBlock Text="{Binding Status}" TextWrapping="Wrap"/>
+            </StatusBarItem>
+        </StatusBar>
+
+        <ScrollViewer x:Name="PageScroll" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
+                      PanningMode="Both" PanningDeceleration="0.001" PanningRatio="1"
+                      Background="{DynamicResource AppBackground}"
+                      PreviewMouseWheel="PageScroll_PreviewMouseWheel">
+            <ItemsControl ItemsSource="{Binding Pages}">
+                <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate>
+                        <VirtualizingStackPanel Orientation="Vertical"/>
+                    </ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                        <Border BorderBrush="{DynamicResource AppBorder}" BorderThickness="1" Margin="12" HorizontalAlignment="Center">
+                            <Grid Width="{Binding BaseWidth}" Height="{Binding BaseHeight}">
+                                <Grid.LayoutTransform>
+                                    <ScaleTransform ScaleX="{Binding DisplayScale}" ScaleY="{Binding DisplayScale}"/>
+                                </Grid.LayoutTransform>
+                                <Image Source="{Binding Image}" Stretch="Fill"/>
+                                <InkCanvas x:Name="PageInk" Background="Transparent"
+                                           PreviewStylusDown="PageInk_PreviewStylusDown"
+                                           PreviewTouchDown="PageInk_PreviewTouchDown">
+                                    <InkCanvas.DefaultDrawingAttributes>
+                                        <DrawingAttributes Color="Black" Width="3.5" Height="3.5" FitToCurve="True" IgnorePressure="False"/>
+                                    </InkCanvas.DefaultDrawingAttributes>
+                                </InkCanvas>
+                            </Grid>
+                        </Border>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+        </ScrollViewer>
+    </DockPanel>
+</Window>

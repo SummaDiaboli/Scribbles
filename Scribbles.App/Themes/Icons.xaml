@@ -1,0 +1,297 @@
+<!-- Lucide icons (ISC licence, https://lucide.dev) as theme-aware DrawingImages. -->
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <Pen x:Key="IconPen" Brush="{DynamicResource AppForeground}" Thickness="2"
+         StartLineCap="Round" EndLineCap="Round" LineJoin="Round"/>
+
+    <DrawingImage x:Key="IconFolderOpen">
+        <DrawingImage.Drawing>
+            <GeometryDrawing Pen="{StaticResource IconPen}">
+                <GeometryDrawing.Geometry>
+                    <PathGeometry Figures="m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2"/>
+                </GeometryDrawing.Geometry>
+            </GeometryDrawing>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+
+    <DrawingImage x:Key="IconZoomIn">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <GeometryDrawing Pen="{StaticResource IconPen}">
+                    <GeometryDrawing.Geometry>
+                        <EllipseGeometry Center="11,11" RadiusX="8" RadiusY="8"/>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <GeometryDrawing Pen="{StaticResource IconPen}">
+                    <GeometryDrawing.Geometry>
+                        <GeometryGroup>
+                            <LineGeometry StartPoint="21,21" EndPoint="16.65,16.65"/>
+                            <LineGeometry StartPoint="11,8" EndPoint="11,14"/>
+                            <LineGeometry StartPoint="8,11" EndPoint="14,11"/>
+                        </GeometryGroup>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+
+    <DrawingImage x:Key="IconZoomOut">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <GeometryDrawing Pen="{StaticResource IconPen}">
+                    <GeometryDrawing.Geometry>
+                        <EllipseGeometry Center="11,11" RadiusX="8" RadiusY="8"/>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <GeometryDrawing Pen="{StaticResource IconPen}">
+                    <GeometryDrawing.Geometry>
+                        <GeometryGroup>
+                            <LineGeometry StartPoint="21,21" EndPoint="16.65,16.65"/>
+                            <LineGeometry StartPoint="8,11" EndPoint="14,11"/>
+                        </GeometryGroup>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+
+    <DrawingImage x:Key="IconSun">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <GeometryDrawing Pen="{StaticResource IconPen}">
+                    <GeometryDrawing.Geometry>
+                        <EllipseGeometry Center="12,12" RadiusX="4" RadiusY="4"/>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <GeometryDrawing Pen="{StaticResource IconPen}">
+                    <GeometryDrawing.Geometry>
+                        <GeometryGroup>
+                            <LineGeometry StartPoint="12,2" EndPoint="12,4"/>
+                            <LineGeometry StartPoint="12,20" EndPoint="12,22"/>
+                            <LineGeometry StartPoint="4.93,4.93" EndPoint="6.34,6.34"/>
+                            <LineGeometry StartPoint="17.66,17.66" EndPoint="19.07,19.07"/>
+                            <LineGeometry StartPoint="2,12" EndPoint="4,12"/>
+                            <LineGeometry StartPoint="20,12" EndPoint="22,12"/>
+                            <LineGeometry StartPoint="6.34,17.66" EndPoint="4.93,19.07"/>
+                            <LineGeometry StartPoint="19.07,4.93" EndPoint="17.66,6.34"/>
+                        </GeometryGroup>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+
+    <DrawingImage x:Key="IconMoon">
+        <DrawingImage.Drawing>
+            <GeometryDrawing Pen="{StaticResource IconPen}">
+                <GeometryDrawing.Geometry>
+                    <PathGeometry Figures="M20.985 12.486a9 9 0 1 1-9.473-9.472c.405-.022.617.46.402.803a6 6 0 0 0 8.268 8.268c.344-.215.825-.004.803.401"/>
+                </GeometryDrawing.Geometry>
+            </GeometryDrawing>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+
+    <DrawingImage x:Key="IconMonitor">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <GeometryDrawing Pen="{StaticResource IconPen}">
+                    <GeometryDrawing.Geometry>
+                        <RectangleGeometry Rect="2,3,20,14" RadiusX="2" RadiusY="2"/>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <GeometryDrawing Pen="{StaticResource IconPen}">
+                    <GeometryDrawing.Geometry>
+                        <GeometryGroup>
+                            <LineGeometry StartPoint="8,21" EndPoint="16,21"/>
+                            <LineGeometry StartPoint="12,17" EndPoint="12,21"/>
+                        </GeometryGroup>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+    <DrawingImage x:Key="IconPencil">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <GeometryDrawing Pen="{StaticResource IconPen}">
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <GeometryDrawing Pen="{StaticResource IconPen}">
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="m15 5 4 4"/>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+
+    <DrawingImage x:Key="IconHighlighter">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <GeometryDrawing Pen="{StaticResource IconPen}">
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="m9 11-6 6v3h9l3-3"/>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <GeometryDrawing Pen="{StaticResource IconPen}">
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="m22 12-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4"/>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+
+    <DrawingImage x:Key="IconEraser">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <GeometryDrawing Pen="{StaticResource IconPen}">
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M21 21H8a2 2 0 0 1-1.42-.587l-3.994-3.999a2 2 0 0 1 0-2.828l10-10a2 2 0 0 1 2.829 0l5.999 6a2 2 0 0 1 0 2.828L12.834 21"/>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <GeometryDrawing Pen="{StaticResource IconPen}">
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="m5.082 11.09 8.828 8.828"/>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+
+    <DrawingImage x:Key="IconLasso">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <GeometryDrawing Pen="{StaticResource IconPen}">
+                    <GeometryDrawing.Geometry>
+                        <GeometryGroup>
+                            <PathGeometry Figures="M3.704 14.467a10 8 0 1 1 3.115 2.375"/>
+                            <PathGeometry Figures="M7 22a5 5 0 0 1-2-3.994"/>
+                        </GeometryGroup>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <GeometryDrawing Pen="{StaticResource IconPen}">
+                    <GeometryDrawing.Geometry>
+                        <EllipseGeometry Center="5,16" RadiusX="2" RadiusY="2"/>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+
+    <DrawingImage x:Key="IconUndo">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <GeometryDrawing Pen="{StaticResource IconPen}">
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M9 14 4 9l5-5"/>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <GeometryDrawing Pen="{StaticResource IconPen}">
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5a5.5 5.5 0 0 1-5.5 5.5H11"/>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+
+    <DrawingImage x:Key="IconRedo">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <GeometryDrawing Pen="{StaticResource IconPen}">
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="m15 14 5-5-5-5"/>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <GeometryDrawing Pen="{StaticResource IconPen}">
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M20 9H9.5A5.5 5.5 0 0 0 4 14.5A5.5 5.5 0 0 0 9.5 20H13"/>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+
+    <DrawingImage x:Key="IconTrash">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <GeometryDrawing Pen="{StaticResource IconPen}">
+                    <GeometryDrawing.Geometry>
+                        <GeometryGroup>
+                            <LineGeometry StartPoint="10,11" EndPoint="10,17"/>
+                            <LineGeometry StartPoint="14,11" EndPoint="14,17"/>
+                            <LineGeometry StartPoint="3,6" EndPoint="21,6"/>
+                        </GeometryGroup>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <GeometryDrawing Pen="{StaticResource IconPen}">
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <GeometryDrawing Pen="{StaticResource IconPen}">
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+
+    <DrawingImage x:Key="IconSave">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <GeometryDrawing Pen="{StaticResource IconPen}">
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M15.2 3a2 2 0 0 1 1.4.6l3.8 3.8a2 2 0 0 1 .6 1.4V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"/>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <GeometryDrawing Pen="{StaticResource IconPen}">
+                    <GeometryDrawing.Geometry>
+                        <GeometryGroup>
+                            <PathGeometry Figures="M17 21v-7a1 1 0 0 0-1-1H8a1 1 0 0 0-1 1v7"/>
+                            <PathGeometry Figures="M7 3v4a1 1 0 0 0 1 1h7"/>
+                        </GeometryGroup>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+    <DrawingImage x:Key="IconPlus">
+        <DrawingImage.Drawing>
+            <GeometryDrawing Pen="{StaticResource IconPen}">
+                <GeometryDrawing.Geometry>
+                    <GeometryGroup>
+                        <LineGeometry StartPoint="5,12" EndPoint="19,12"/>
+                        <LineGeometry StartPoint="12,5" EndPoint="12,19"/>
+                    </GeometryGroup>
+                </GeometryDrawing.Geometry>
+            </GeometryDrawing>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+
+    <DrawingImage x:Key="IconPalette">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <GeometryDrawing Pen="{StaticResource IconPen}">
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M12 22a1 1 0 0 1 0-20 10 9 0 0 1 10 9 5 5 0 0 1-5 5h-2.25a1.75 1.75 0 0 0-1.4 2.8l.3.4a1.75 1.75 0 0 1-1.4 2.8z"/>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <GeometryDrawing Pen="{StaticResource IconPen}">
+                    <GeometryDrawing.Geometry>
+                        <GeometryGroup>
+                            <EllipseGeometry Center="13.5,6.5" RadiusX="0.5" RadiusY="0.5"/>
+                            <EllipseGeometry Center="17.5,10.5" RadiusX="0.5" RadiusY="0.5"/>
+                            <EllipseGeometry Center="6.5,12.5" RadiusX="0.5" RadiusY="0.5"/>
+                            <EllipseGeometry Center="8.5,7.5" RadiusX="0.5" RadiusY="0.5"/>
+                        </GeometryGroup>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+</ResourceDictionary>
