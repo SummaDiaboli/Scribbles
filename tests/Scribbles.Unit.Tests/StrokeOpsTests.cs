@@ -89,7 +89,7 @@ public sealed class NoteSerializerTests
         {
             new InkStroke("a", 1, ToolKind.Pen, 0xFF112233, 2.5,
                 new[] { new StrokePoint(1, 2, 0.8f), new StrokePoint(3, 4, 0.4f) }),
-        }),
+        }, Array.Empty<TextBoxItem>()),
     });
 
     [Fact]
@@ -129,7 +129,7 @@ public sealed class NoteSerializerTests
             {
                 new InkStroke("p", 1, ToolKind.Highlighter, 0x80FF0000, 8.0,
                     new[] { new StrokePoint(x, y), new StrokePoint(x + 1, y + 1) }),
-            }),
+            }, Array.Empty<TextBoxItem>()),
         });
         var restored = NoteSerializer.FromJson(NoteSerializer.ToJson(doc));
         return restored is not null

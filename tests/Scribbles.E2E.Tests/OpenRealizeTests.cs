@@ -49,7 +49,7 @@ public sealed class OpenRealizeTests
         var store = new ScribblesPdfStore();
         var model = new NoteDocument("", new[]
         {
-            new NotePage(1, 595, 842, new[] { SavedStroke() }),
+            new NotePage(1, 595, 842, new[] { SavedStroke() }, Array.Empty<TextBoxItem>()),
         });
         string path = WritePdf(store.Save(BasePdf(), model));
 

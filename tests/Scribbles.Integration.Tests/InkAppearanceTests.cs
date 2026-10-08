@@ -40,7 +40,7 @@ public sealed class InkAppearanceTests
                 new InkStroke("big", 1, ToolKind.Pen, 0xFF000000, 4.0,
                     Enumerable.Range(0, 50).Select(i =>
                         new StrokePoint(50 + i * 8, 400 + 100 * Math.Sin(i * 0.3))).ToList()),
-            }),
+            }, Array.Empty<TextBoxItem>()),
         });
 
         byte[] saved = store.Save(CreateOnePagePdf(), model);

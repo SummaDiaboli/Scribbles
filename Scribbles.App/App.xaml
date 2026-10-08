@@ -1,9 +1,11 @@
 ﻿<Application x:Class="Scribbles.App.App"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:services="clr-namespace:Scribbles.App.Services"
              StartupUri="MainWindow.xaml">
     <Application.Resources>
         <ResourceDictionary>
+            <services:ArgbToBrushConverter x:Key="ArgbToBrush"/>
             <ResourceDictionary.MergedDictionaries>
                 <ResourceDictionary Source="/Scribbles.App;component/Themes/LightTheme.xaml"/>
                 <ResourceDictionary Source="/Scribbles.App;component/Themes/Icons.xaml"/>

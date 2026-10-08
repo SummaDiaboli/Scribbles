@@ -23,6 +23,7 @@
                 <MenuItem x:Name="RecentMenuItem" Header="_Recent" SubmenuOpened="RecentMenu_Opened"/>
                 <MenuItem Header="_Save" Command="{Binding SaveCommand}" InputGestureText="Ctrl+S"/>
                 <MenuItem Header="Save _As…" Click="SaveAs_Click"/>
+                <MenuItem Header="Export _flattened copy…" Click="Export_Click"/>
                 <Separator/>
                 <MenuItem Header="_Recover autosave…" Click="Recover_Click"/>
                 <Separator/>
@@ -86,6 +87,18 @@
                     <RadioButton GroupName="PenTools" ToolTip="Text select — drag over PDF text to copy" Style="{StaticResource IconToggle}" Click="Tool_Click" Tag="TextSelect">
                         <Image Source="{StaticResource IconType}" Width="18" Height="18"/>
                     </RadioButton>
+                    <!-- TextEdit parked (2026-10-08): native editing needs a rethink.
+                    <RadioButton GroupName="PenTools" ToolTip="Edit text — click a line to type" Style="{StaticResource IconToggle}" Click="Tool_Click" Tag="TextEdit">
+                        <Image Source="{StaticResource IconTextEdit}" Width="18" Height="18"/>
+                    </RadioButton>
+                    -->
+                    <Separator/>
+                    <Button ToolTip="Convert lasso selection to text" Style="{StaticResource IconButton}" Click="Convert_Click">
+                        <Image Source="{StaticResource IconScanText}" Width="18" Height="18"/>
+                    </Button>
+                    <Button ToolTip="Make lasso selection copyable (embeds invisible text on export)" Style="{StaticResource IconButton}" Click="Copyable_Click">
+                        <Image Source="{StaticResource IconCopyable}" Width="18" Height="18"/>
+                    </Button>
                     <Separator/>
                     <StackPanel x:Name="PalettePanel" Orientation="Horizontal" VerticalAlignment="Center"/>
                     <Button ToolTip="Custom color…" Style="{StaticResource IconButton}" Click="Picker_Click">
@@ -152,6 +165,36 @@
                                         PreviewMouseLeftButtonDown="TextOverlay_Down"
                                         PreviewMouseMove="TextOverlay_Move"
                                         PreviewMouseLeftButtonUp="TextOverlay_Up"/>
+                                <ItemsControl ItemsSource="{Binding TextBoxes}" Focusable="False">
+                                    <ItemsControl.ItemsPanel>
+                                        <ItemsPanelTemplate>
+                                            <!-- Null background: clicks pass through to selection/ink below. -->
+                                            <Canvas/>
+                                        </ItemsPanelTemplate>
+                                    </ItemsControl.ItemsPanel>
+                                    <ItemsControl.ItemContainerStyle>
+                                        <Style TargetType="ContentPresenter">
+                                            <Setter Property="Canvas.Left" Value="{Binding DisplayX}"/>
+                                            <Setter Property="Canvas.Top" Value="{Binding DisplayY}"/>
+                                        </Style>
+                                    </ItemsControl.ItemContainerStyle>
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <DataTemplate.Resources>
+                                                <Style TargetType="TextBox">
+                                                    <EventSetter Event="TextChanged" Handler="TextBoxEdited"/>
+                                                </Style>
+                                            </DataTemplate.Resources>
+                                            <TextBox Text="{Binding Text, UpdateSourceTrigger=PropertyChanged}"
+                                                     Width="{Binding DisplayWidth}" Height="{Binding DisplayHeight}"
+                                                     FontSize="{Binding DisplayFontSize}"
+                                                     Foreground="{Binding ColorArgb, Converter={StaticResource ArgbToBrush}}"
+                                                     Background="{DynamicResource AppSurface}"
+                                                     BorderBrush="{DynamicResource AppBorder}"
+                                                     AcceptsReturn="True" TextWrapping="Wrap"/>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
                             </Grid>
                         </Border>
                     </DataTemplate>

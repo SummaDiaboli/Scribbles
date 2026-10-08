@@ -11,12 +11,22 @@ namespace Scribbles.App.ViewModels;
 public sealed partial class PageViewModel : ObservableObject
 {
     public int Number { get; init; }
-    public double WidthPt { get; init; }
-    public double HeightPt { get; init; }
-    public ImageSource Image { get; init; } = null!;
+
+    [ObservableProperty]
+    private double _widthPt;
+
+    [ObservableProperty]
+    private double _heightPt;
+
+    [ObservableProperty]
+    private ImageSource _image = null!;
 
     /// <summary>Native PDF text words for the text-select tool (empty for scans).</summary>
-    public IReadOnlyList<PdfWord> Words { get; init; } = Array.Empty<PdfWord>();
+    [ObservableProperty]
+    private IReadOnlyList<PdfWord> _words = Array.Empty<PdfWord>();
+
+    /// <summary>Editable text boxes (converted handwriting, native edits).</summary>
+    public ObservableCollection<TextBoxItem> TextBoxes { get; } = new();
 
     /// <summary>Fixed base size in DIPs (render pixels / 2). Zoom is a pure visual scale.</summary>
     [ObservableProperty]

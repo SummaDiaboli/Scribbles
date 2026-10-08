@@ -57,12 +57,55 @@ internal sealed class DocumentSession
         StateChanged?.Invoke(this, EventArgs.Empty);
     }
 
+    /// <summary>Per-stroke recognition state by converter id: (mode, recognized text).</summary>
+    private readonly Dictionary<string, (InkHandleMode Mode, string Text)> _copyMeta = new();
+
+    public void MarkCopyable(IEnumerable<(int Page, Stroke Stroke, string Id)> strokes, string text)
+    {
+        foreach (var (_, _, id) in strokes)
+            _copyMeta[id] = (InkHandleMode.Copyable, text);
+        MarkDirty();
+    }
+
+    private (InkHandleMode Mode, string Text) MetaFor(string id) =>
+        _copyMeta.TryGetValue(id, out var meta) ? meta : (InkHandleMode.Keep, "");
+
+    private InkStroke ApplyMeta(InkStroke stroke)
+    {
+        var (mode, text) = MetaFor(stroke.Id);
+        return stroke with { Mode = mode, RecognizedText = text };
+    }
+
     public bool CanUndoAny() => _history.Pages.Any(_history.CanUndo);
 
     public bool CanRedoAny() => _history.Pages.Any(_history.CanRedo);
 
     /// <summary>Point future saves at a different path (used by autosave recovery).</summary>
     public void RetargetCurrentPath(string path) => CurrentPath = path;
+
+    /// <summary>Swaps the base bytes (used after true text-layer edits).</summary>
+    public void ReplaceBaseBytes(byte[] bytes)
+    {
+        CurrentBytes = bytes;
+        MarkDirty();
+    }
+
+    /// <summary>Re-renders one page's image and words after a true text edit.</summary>
+    public void RefreshPage(MainViewModel vm, int pageNumber)
+    {
+        if (CurrentBytes is null)
+            return;
+        var page = vm.Pages.FirstOrDefault(p => p.Number == pageNumber);
+        if (page is null)
+            return;
+        var rendered = new DocnetPdfRenderer().RenderSinglePage(CurrentBytes, pageNumber);
+        page.WidthPt = rendered.WidthPt;
+        page.HeightPt = rendered.HeightPt;
+        page.Image = rendered.Image;
+        page.Words = rendered.Words;
+        page.BaseWidth = rendered.Image.Width / 2.0;
+        page.BaseHeight = rendered.Image.Height / 2.0;
+    }
 
     public InkCanvas? CanvasForPage(int page)
     {
@@ -130,7 +173,7 @@ internal sealed class DocumentSession
         var models = new List<InkStroke>();
         foreach (var stroke in ink.Strokes)
         {
-            models.Add(_converter.ToModel(stroke, page, fx, fy));
+            models.Add(ApplyMeta(_converter.ToModel(stroke, page, fx, fy)));
             _converter.Forget(stroke);
         }
         _stash[page] = models;
@@ -174,16 +217,21 @@ internal sealed class DocumentSession
             {
                 // Unrealized (virtualized away): fall back to the stash.
                 strokes = _stash.TryGetValue(vm.Number, out var stashed)
-                    ? stashed
+                    ? stashed.Select(ApplyMeta).ToList()
                     : new List<InkStroke>();
             }
             else
             {
                 strokes = canvas.Strokes
-                    .Select(s => _converter.ToModel(s, vm.Number, vm.DipPerPtX, vm.DipPerPtY))
+                    .Select(s =>
+                    {
+                        var (mode, text) = MetaFor(_converter.GetId(s));
+                        return _converter.ToModel(s, vm.Number, vm.DipPerPtX, vm.DipPerPtY)
+                            with { Mode = mode, RecognizedText = text };
+                    })
                     .ToList();
             }
-            result.Add(new NotePage(vm.Number, vm.WidthPt, vm.HeightPt, strokes));
+            result.Add(new NotePage(vm.Number, vm.WidthPt, vm.HeightPt, strokes, vm.TextBoxes.ToList()));
         }
         return new NoteDocument("", result);
     }
@@ -203,10 +251,28 @@ internal sealed class DocumentSession
 
         // Seed the stash in model form; SyncContainers converts for canvases
         // as they realize (containers materialize asynchronously).
+        _copyMeta.Clear();
         if (loaded is { HashesMatch: true, Model: not null })
         {
             foreach (var page in loaded.Model.Pages)
+            {
                 _stash[page.Number] = page.Strokes.ToList();
+                foreach (var stroke in page.Strokes)
+                {
+                    if (stroke.Mode != InkHandleMode.Keep || stroke.RecognizedText.Length > 0)
+                        _copyMeta[stroke.Id] = (stroke.Mode, stroke.RecognizedText);
+                }
+                var vmPage = vm.Pages.FirstOrDefault(p => p.Number == page.Number);
+                if (vmPage is not null)
+                {
+                    vmPage.TextBoxes.Clear();
+                    foreach (var box in page.TextBoxes)
+                    {
+                        SetDisplay(box, vmPage.DipPerPtX, vmPage.DipPerPtY);
+                        vmPage.TextBoxes.Add(box);
+                    }
+                }
+            }
             vm.Status = $"{loaded.Pages.Count} page(s) reopened — annotations editable.";
         }
         else if (loaded.FallbackInk.Count > 0)
@@ -220,6 +286,27 @@ internal sealed class DocumentSession
         CurrentPath = path;
         CurrentBytes = bytes;
         SetClean();
+    }
+
+    public void ExportFlatCopy(MainViewModel vm, string targetPath)
+    {
+        if (CurrentBytes is null)
+        {
+            vm.Status = "Nothing to export — open a PDF first.";
+            return;
+        }
+        byte[] exported = _store.ExportFlat(CurrentBytes, CollectModel(vm.Pages));
+        File.WriteAllBytes(targetPath, exported);
+        vm.Status = $"Exported flattened copy to {Path.GetFileName(targetPath)}.";
+    }
+
+    internal static void SetDisplay(TextBoxItem box, double fx, double fy)
+    {
+        box.DisplayX = box.X * fx;
+        box.DisplayY = box.Y * fy;
+        box.DisplayWidth = Math.Max(20, box.Width * fx);
+        box.DisplayHeight = Math.Max(16, box.Height * fy);
+        box.DisplayFontSize = Math.Clamp(box.FontSizePt * fx, 8, 96);
     }
 
     public void Save(MainViewModel vm, string? path, Func<string?> promptSaveAs)

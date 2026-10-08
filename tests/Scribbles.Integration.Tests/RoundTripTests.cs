@@ -33,8 +33,8 @@ public sealed class RoundTripTests
                 new[] { new StrokePoint(100, 200, 0.8f), new StrokePoint(150, 220, 0.4f), new StrokePoint(200, 210, 0.6f) }),
             new InkStroke("stroke-2", 1, ToolKind.Highlighter, 0x80FFEE00, 8.0,
                 new[] { new StrokePoint(50, 50), new StrokePoint(300, 60) }),
-        }),
-        new NotePage(2, 595, 842, Array.Empty<InkStroke>()),
+        }, Array.Empty<TextBoxItem>()),
+        new NotePage(2, 595, 842, Array.Empty<InkStroke>(), Array.Empty<TextBoxItem>()),
     });
 
     [Fact]

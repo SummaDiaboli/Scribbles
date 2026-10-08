@@ -23,7 +23,9 @@ public sealed record InkStroke(
     ToolKind Tool,
     uint ColorArgb,
     double WidthPt,
-    IReadOnlyList<StrokePoint> Points)
+    IReadOnlyList<StrokePoint> Points,
+    InkHandleMode Mode = InkHandleMode.Keep,
+    string RecognizedText = "")
 {
     public (double MinX, double MinY, double MaxX, double MaxY) Bounds()
     {
@@ -44,7 +46,8 @@ public sealed record NotePage(
     int Number,
     double WidthPt,
     double HeightPt,
-    IReadOnlyList<InkStroke> Strokes);
+    IReadOnlyList<InkStroke> Strokes,
+    IReadOnlyList<TextBoxItem> TextBoxes);
 
 /// <summary>
 /// Full editable note model. Serialized as JSON into the PDF /PieceInfo

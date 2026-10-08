@@ -14,6 +14,7 @@ internal enum PenTool
     PointEraser,
     Lasso,
     TextSelect,
+    TextEdit,
 }
 
 /// <summary>Pen toolbar state: tool, color, size → InkCanvas modes + attributes.</summary>
@@ -31,6 +32,7 @@ internal sealed class PenToolbarController
         "PointEraser" => PenTool.PointEraser,
         "Lasso" => PenTool.Lasso,
         "TextSelect" => PenTool.TextSelect,
+        "TextEdit" => PenTool.TextEdit,
         _ => PenTool.Pen,
     };
 
@@ -67,6 +69,7 @@ internal sealed class PenToolbarController
             PenTool.PointEraser => InkCanvasEditingMode.EraseByPoint,
             PenTool.Lasso => InkCanvasEditingMode.Select,
             PenTool.TextSelect => InkCanvasEditingMode.None, // marquee handled by mouse
+            PenTool.TextEdit => InkCanvasEditingMode.None, // clicks handled by mouse
             _ => InkCanvasEditingMode.Ink,
         };
     }

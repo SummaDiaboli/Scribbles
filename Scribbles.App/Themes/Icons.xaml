@@ -315,4 +315,67 @@
             </DrawingGroup>
         </DrawingImage.Drawing>
     </DrawingImage>
+    <DrawingImage x:Key="IconScanText">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <GeometryDrawing Pen="{StaticResource IconPen}">
+                    <GeometryDrawing.Geometry>
+                        <GeometryGroup>
+                            <PathGeometry Figures="M3 7V5a2 2 0 0 1 2-2h2"/>
+                            <PathGeometry Figures="M17 3h2a2 2 0 0 1 2 2v2"/>
+                            <PathGeometry Figures="M21 17v2a2 2 0 0 1-2 2h-2"/>
+                            <PathGeometry Figures="M7 21H5a2 2 0 0 1-2-2v-2"/>
+                        </GeometryGroup>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <GeometryDrawing Pen="{StaticResource IconPen}">
+                    <GeometryDrawing.Geometry>
+                        <GeometryGroup>
+                            <LineGeometry StartPoint="7,8" EndPoint="15,8"/>
+                            <LineGeometry StartPoint="7,12" EndPoint="17,12"/>
+                            <LineGeometry StartPoint="7,16" EndPoint="13,16"/>
+                        </GeometryGroup>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+
+    <DrawingImage x:Key="IconCopyable">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <GeometryDrawing Pen="{StaticResource IconPen}">
+                    <GeometryDrawing.Geometry>
+                        <RectangleGeometry Rect="8,2,8,4" RadiusX="1" RadiusY="1"/>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <GeometryDrawing Pen="{StaticResource IconPen}">
+                    <GeometryDrawing.Geometry>
+                        <GeometryGroup>
+                            <PathGeometry Figures="M8 4H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/>
+                            <PathGeometry Figures="M16 4h2a2 2 0 0 1 2 2v4"/>
+                            <PathGeometry Figures="M21 14H11"/>
+                            <PathGeometry Figures="m15 10-4 4 4 4"/>
+                        </GeometryGroup>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+    <DrawingImage x:Key="IconTextEdit">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <GeometryDrawing Pen="{StaticResource IconPen}">
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M13 21h8"/>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <GeometryDrawing Pen="{StaticResource IconPen}">
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
 </ResourceDictionary>

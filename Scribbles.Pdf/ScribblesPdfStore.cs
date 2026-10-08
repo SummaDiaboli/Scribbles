@@ -1,5 +1,6 @@
 using PdfSharp;
 using PdfSharp.Pdf;
+using PdfSharp.Pdf.Advanced;
 using PdfSharp.Pdf.IO;
 using Scribbles.Core;
 
@@ -50,6 +51,72 @@ public sealed class ScribblesPdfStore
         return outStream.ToArray();
     }
 
+    /// <summary>
+    /// Flattened export for sharing: base content + burned-in ink paths,
+    /// visible converted/edited text, invisible copyable text — no /Ink
+    /// annotations, no PieceInfo (not re-editable by design).
+    /// </summary>
+    public byte[] ExportFlat(byte[] basePdfBytes, NoteDocument model)
+    {
+        using var stream = new MemoryStream(basePdfBytes);
+        using var doc = PdfReader.Open(stream, PdfDocumentOpenMode.Modify);
+        var pages = ReadPages(doc);
+
+        for (int i = 0; i < doc.PageCount; i++)
+        {
+            var page = doc.Pages[i];
+            double pageHeight = pages[i].HeightPt;
+            InkAnnotationMapper.RemoveOwnAnnotations(page);
+            RemoveOwnPieceInfo(page);
+
+            var pageModel = model.Pages.FirstOrDefault(p => p.Number == i + 1);
+            if (pageModel is null)
+                continue;
+            var sb = new System.Text.StringBuilder();
+
+            foreach (var stroke in pageModel.Strokes)
+            {
+                if (stroke.Points.Count == 0)
+                    continue;
+                var (a, r, g, b) = InkUnits.FromArgb(stroke.ColorArgb);
+                double alpha = stroke.Tool == ToolKind.Highlighter ? 0.5 : 1.0;
+                sb.Append(PdfContentBuilder.FlattenStroke(
+                    stroke.Points, pageHeight, Math.Max(0.5, stroke.WidthPt),
+                    r / 255.0 * alpha + (1 - alpha), // highlighter washes toward white
+                    g / 255.0 * alpha + (1 - alpha),
+                    b / 255.0 * alpha + (1 - alpha)));
+                if (stroke.Mode == InkHandleMode.Copyable && !string.IsNullOrWhiteSpace(stroke.RecognizedText))
+                {
+                    var (minX, minY, _, maxY) = stroke.Bounds();
+                    double size = Math.Clamp((maxY - minY) / 2.0, 8, 24);
+                    sb.Append(PdfContentBuilder.InvisibleText(
+                        stroke.RecognizedText, minX, minY, size, pageHeight));
+                }
+            }
+
+            foreach (var box in pageModel.TextBoxes)
+            {
+                if (box.Kind == TextBoxKind.EditedNative)
+                    sb.Append(PdfContentBuilder.CoverRect(box.X, box.Y, box.Width, box.Height, pageHeight));
+                var (a, r, g, b) = InkUnits.FromArgb(box.ColorArgb);
+                sb.Append(PdfContentBuilder.VisibleText(
+                    box.Text, box.X, box.Y, Math.Max(6, box.FontSizePt), pageHeight,
+                    r / 255.0, g / 255.0, b / 255.0));
+            }
+
+            string chunk = sb.ToString();
+            if (chunk.Length > 0)
+            {
+                EnsureCopyFont(page);
+                AppendContentStream(doc, page, System.Text.Encoding.ASCII.GetBytes(chunk));
+            }
+        }
+
+        using var outStream = new MemoryStream();
+        doc.Save(outStream);
+        return outStream.ToArray();
+    }
+
     public LoadedPdf Load(byte[] pdfBytes)
     {
         using var stream = new MemoryStream(pdfBytes);
@@ -78,6 +145,70 @@ public sealed class ScribblesPdfStore
         }
 
         return new LoadedPdf(pages, model, hashesMatch, fallback);
+    }
+
+    /// <summary>
+    /// Appends a raw content stream to the page: rebuilds /Contents as an
+    /// array (existing entries preserved by reference) plus the new stream.
+    /// Existing streams stay untouched (no decode/re-encode round-trip).
+    /// </summary>
+    private static void AppendContentStream(PdfDocument doc, PdfPage page, byte[] bytes)
+    {
+        var streamDict = new PdfDictionary(doc);
+        streamDict.CreateStream(bytes);
+        doc.Internals.AddObject(streamDict);
+        if (streamDict.Reference is null)
+            throw new InvalidOperationException("Could not indirect the appended content stream.");
+
+        var array = new PdfArray();
+        var existing = page.Elements["/Contents"];
+        if (existing is PdfArray oldArray)
+        {
+            foreach (var item in oldArray.Elements)
+                array.Elements.Add(item);
+        }
+        else if (existing is not null)
+        {
+            array.Elements.Add(existing);
+        }
+        array.Elements.Add(streamDict.Reference);
+        page.Elements["/Contents"] = array;
+    }
+
+    private static void RemoveOwnPieceInfo(PdfPage page)
+    {
+        if (page.Elements["/PieceInfo"] is PdfDictionary piece)
+            piece.Elements.Remove("/" + PieceInfoStore.AppKey);
+    }
+
+    private static PdfDictionary? Deref(PdfItem? item) => item switch
+    {
+        PdfDictionary dict => dict,
+        PdfReference reference => reference.Value as PdfDictionary,
+        _ => null,
+    };
+
+    /// <summary>Injects a base-14 Helvetica font (no embedding needed).</summary>
+    private static void EnsureCopyFont(PdfPage page)
+    {
+        var resources = Deref(page.Elements["/Resources"]) ?? new PdfDictionary();
+        if (page.Elements["/Resources"] is null)
+            page.Elements["/Resources"] = resources;
+        var fonts = Deref(resources.Elements["/Font"]);
+        if (fonts is null)
+        {
+            fonts = new PdfDictionary();
+            resources.Elements["/Font"] = fonts;
+        }
+        if (fonts.Elements["/" + PdfContentBuilder.CopyFontName] is null)
+        {
+            var font = new PdfDictionary();
+            font.Elements.SetName("/Type", "/Font");
+            font.Elements.SetName("/Subtype", "/Type1");
+            font.Elements.SetName("/BaseFont", "/Helvetica");
+            font.Elements.SetName("/Encoding", "/WinAnsiEncoding");
+            fonts.Elements["/" + PdfContentBuilder.CopyFontName] = font;
+        }
     }
 
     public IReadOnlyList<StoredPage> ReadPages(byte[] pdfBytes)

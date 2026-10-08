@@ -55,6 +55,24 @@ internal static class WpfTestHost
         captured?.Throw();
     }
 
+    public static void Sta(Func<Task> asyncBody)
+    {
+        ExceptionDispatchInfo? captured = null;
+        Func<Task> work = async () =>
+        {
+            try
+            {
+                await asyncBody().ConfigureAwait(true);
+            }
+            catch (Exception ex)
+            {
+                captured = ExceptionDispatchInfo.Capture(ex);
+            }
+        };
+        TestDispatcher().InvokeAsync(work).Task.Unwrap().Wait(TimeSpan.FromMinutes(2));
+        captured?.Throw();
+    }
+
     public static void EnsureThemedApp(string theme)
     {
         Dispatcher.CurrentDispatcher.VerifyAccess();
