@@ -12,7 +12,6 @@
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
     <PackageReference Include="Docnet.Core" Version="2.6.0" />
     <PackageReference Include="PdfSharp" Version="6.2.4" />
-    <PackageReference Include="UglyToad.PdfPig" Version="1.7.0-custom-5" />
   </ItemGroup>
 
   <ItemGroup>

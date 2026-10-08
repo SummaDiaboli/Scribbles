@@ -24,7 +24,15 @@ public static class SettingsService
             if (!File.Exists(path))
                 return AppSettings.Default;
             var settings = JsonSerializer.Deserialize<AppSettings>(File.ReadAllText(path), Options);
-            return settings ?? AppSettings.Default;
+            if (settings is null)
+                return AppSettings.Default;
+            // Files written by older builds lack newer fields (null arrays
+            // crashed startup in 2026-10-08): backfill from defaults.
+            return settings with
+            {
+                Palette = settings.Palette ?? AppSettings.Default.Palette,
+                RecentFiles = settings.RecentFiles ?? AppSettings.Default.RecentFiles,
+            };
         }
         catch
         {

@@ -1,4 +1,5 @@
 using System.IO;
+using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Ink;
 using Scribbles.App.Services;
@@ -26,6 +27,15 @@ internal sealed class DocumentSession
 
     /// <summary>Raised whenever dirty/history state changes (drives Undo/Redo availability).</summary>
     public event EventHandler? StateChanged;
+
+    /// <summary>
+    /// Model-form strokes for pages whose canvases don't currently exist
+    /// (not yet realized, or recycled by virtualization). Seeded at open,
+    /// refreshed when a canvas unloads.
+    /// </summary>
+    private readonly Dictionary<int, List<InkStroke>> _stash = new();
+
+    private readonly Dictionary<int, (double X, double Y)> _factors = new();
 
     public DocumentSession(
         ScribblesPdfStore store,
@@ -65,12 +75,71 @@ internal sealed class DocumentSession
     public void HookCanvases()
     {
         foreach (var ink in _findCanvases())
+            HookOne(ink);
+    }
+
+    private void HookOne(InkCanvas ink)
+    {
+        ink.Strokes.StrokesChanged -= HandleStrokesChanged;
+        ink.Strokes.StrokesChanged += HandleStrokesChanged;
+        ink.Unloaded -= HandleCanvasUnloaded;
+        ink.Unloaded += HandleCanvasUnloaded;
+        _history.EnsureBaseline(CanvasExplorer.GetPageNumber(ink), ink.Strokes);
+    }
+
+    /// <summary>
+    /// Syncs freshly realized containers: hooks, restores stashed strokes,
+    /// applies the tool. Called when the generator reports new containers
+    /// (and after open). Strokes of recycled pages live in the stash.
+    /// </summary>
+    public void SyncContainers()
+    {
+        foreach (var ink in _findCanvases())
         {
-            ink.Strokes.StrokesChanged -= HandleStrokesChanged;
-            ink.Strokes.StrokesChanged += HandleStrokesChanged;
-            _history.EnsureBaseline(CanvasExplorer.GetPageNumber(ink), ink.Strokes);
+            int page = CanvasExplorer.GetPageNumber(ink);
+            if (_stash.TryGetValue(page, out var stashed))
+            {
+                _stash.Remove(page);
+                var (fx, fy) = FactorsFor(page);
+                var strokes = stashed.Select(s => _converter.FromModel(s, fx, fy)).ToList();
+                _history.Suspended = true;
+                try
+                {
+                    // Replace first: HookOne must latch onto the live collection.
+                    ink.Strokes = new StrokeCollection(strokes);
+                }
+                finally
+                {
+                    _history.Suspended = false;
+                }
+            }
+            HookOne(ink);
+            _pen.ApplyTo(ink);
         }
     }
+
+    private void HandleCanvasUnloaded(object sender, RoutedEventArgs e)
+    {
+        if (sender is not InkCanvas ink)
+            return;
+        int page = CanvasExplorer.GetPageNumber(ink);
+        ink.Strokes.StrokesChanged -= HandleStrokesChanged;
+        ink.Unloaded -= HandleCanvasUnloaded;
+        // Convert live strokes back to model form before the visual dies.
+        var (fx, fy) = FactorsFor(page);
+        var models = new List<InkStroke>();
+        foreach (var stroke in ink.Strokes)
+        {
+            models.Add(_converter.ToModel(stroke, page, fx, fy));
+            _converter.Forget(stroke);
+        }
+        _stash[page] = models;
+    }
+
+    private (double X, double Y) FactorsFor(int pageNumber) =>
+        _factors.TryGetValue(pageNumber, out var factors)
+            ? factors
+            : (Core.InkUnits.DipsPerPoint, Core.InkUnits.DipsPerPoint);
 
     private void HandleStrokesChanged(object? sender, StrokeCollectionChangedEventArgs e)
     {
@@ -100,9 +169,20 @@ internal sealed class DocumentSession
         foreach (var vm in pages)
         {
             var canvas = CanvasForPage(vm.Number);
-            var strokes = canvas is null
-                ? new List<InkStroke>()
-                : canvas.Strokes.Select(s => _converter.ToModel(s, vm.Number)).ToList();
+            List<InkStroke> strokes;
+            if (canvas is null)
+            {
+                // Unrealized (virtualized away): fall back to the stash.
+                strokes = _stash.TryGetValue(vm.Number, out var stashed)
+                    ? stashed
+                    : new List<InkStroke>();
+            }
+            else
+            {
+                strokes = canvas.Strokes
+                    .Select(s => _converter.ToModel(s, vm.Number, vm.DipPerPtX, vm.DipPerPtY))
+                    .ToList();
+            }
             result.Add(new NotePage(vm.Number, vm.WidthPt, vm.HeightPt, strokes));
         }
         return new NoteDocument("", result);
@@ -114,42 +194,28 @@ internal sealed class DocumentSession
         var loaded = _store.Load(bytes);
 
         vm.LoadPdf(path);
-        HookCanvases();
-        ApplyToolToAll();
         _converter.Clear();
         _history.Clear();
+        _stash.Clear();
+        _factors.Clear();
+        foreach (var page in vm.Pages)
+            _factors[page.Number] = (page.DipPerPtX, page.DipPerPtY);
 
-        var strokesByPage = new Dictionary<int, List<Stroke>>();
+        // Seed the stash in model form; SyncContainers converts for canvases
+        // as they realize (containers materialize asynchronously).
         if (loaded is { HashesMatch: true, Model: not null })
         {
             foreach (var page in loaded.Model.Pages)
-                StrokesFor(strokesByPage, page.Number).AddRange(page.Strokes.Select(_converter.FromModel));
+                _stash[page.Number] = page.Strokes.ToList();
             vm.Status = $"{loaded.Pages.Count} page(s) reopened — annotations editable.";
         }
         else if (loaded.FallbackInk.Count > 0)
         {
-            foreach (var s in loaded.FallbackInk)
-                StrokesFor(strokesByPage, s.PageNumber).Add(_converter.FromModel(s));
+            foreach (var group in loaded.FallbackInk.GroupBy(s => s.PageNumber))
+                _stash[group.Key] = group.ToList();
             vm.Status = $"{loaded.Pages.Count} page(s). PDF was changed by another tool — ink imported (pressure approximate).";
         }
-
-        _history.Suspended = true;
-        try
-        {
-            foreach (var (pageNumber, strokes) in strokesByPage)
-            {
-                var canvas = CanvasForPage(pageNumber);
-                if (canvas is null)
-                    continue;
-                var collection = new StrokeCollection(strokes);
-                canvas.Strokes = collection;
-                _history.Snapshot(pageNumber, collection);
-            }
-        }
-        finally
-        {
-            _history.Suspended = false;
-        }
+        SyncContainers();
 
         CurrentPath = path;
         CurrentBytes = bytes;
@@ -189,7 +255,9 @@ internal sealed class DocumentSession
             var strokes = new StrokeCollection(new MemoryStream(state));
             foreach (var s in strokes)
                 _converter.GetId(s);
+            // Replace first, then re-hook: the hook belongs to the live collection.
             canvas.Strokes = strokes;
+            HookOne(canvas);
             _history.Snapshot(page, strokes);
             _pen.ApplyTo(canvas);
         }
@@ -246,12 +314,5 @@ internal sealed class DocumentSession
     {
         IsDirty = false;
         StateChanged?.Invoke(this, EventArgs.Empty);
-    }
-
-    private static List<Stroke> StrokesFor(Dictionary<int, List<Stroke>> map, int page)
-    {
-        if (!map.TryGetValue(page, out var list))
-            map[page] = list = new List<Stroke>();
-        return list;
     }
 }

@@ -89,36 +89,21 @@ public sealed class OffscreenRenderTests
     {
         EnsureThemedApp("Dark");
 
-        // Hidden host: runs full layout/parenting so Role triggers evaluate,
-        // but nothing is ever visible and focus is never taken.
-        var menu = new Menu();
+        // Forced layout (never shown): runs full parenting so Role triggers
+        // evaluate, without any window that could shut the test app down.
+        var menu = new Menu { Width = 800, Height = 600 };
         var file = new MenuItem { Header = "_File" };
         var open = new MenuItem { Header = "_Open PDF…" };
         file.Items.Add(open);
         menu.Items.Add(file);
 
-        var host = new Window
-        {
-            Width = 800,
-            Height = 600,
-            Visibility = Visibility.Hidden,
-            ShowInTaskbar = false,
-            ShowActivated = false,
-            Content = menu,
-        };
-        host.Show();
-        try
-        {
-            host.UpdateLayout();
-            file.ApplyTemplate();
-            open.ApplyTemplate();
-            file.Template.FindName("Dropdown", file).ShouldNotBeNull("File should use the top-level template");
-            open.Template.FindName("Submenu", open).ShouldNotBeNull("Open should use the submenu template");
-        }
-        finally
-        {
-            host.Close();
-        }
+        menu.Measure(new Size(800, 600));
+        menu.Arrange(new Rect(0, 0, 800, 600));
+        menu.UpdateLayout();
+        file.ApplyTemplate();
+        open.ApplyTemplate();
+        file.Template.FindName("Dropdown", file).ShouldNotBeNull("File should use the top-level template");
+        open.Template.FindName("Submenu", open).ShouldNotBeNull("Open should use the submenu template");
     });
 
     [Fact]

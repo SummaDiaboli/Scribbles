@@ -41,6 +41,7 @@ public partial class MainWindow : Window
         _vm.RequestUndo += (_, _) => _session.Undo(TargetPages());
         _vm.RequestRedo += (_, _) => _session.Redo(TargetPages());
         _vm.RequestDeleteSelection += (_, _) => _session.DeleteSelection();
+        _vm.RequestCopyText += (_, _) => CopyTextSelection();
         _vm.RequestOpen += (_, _) =>
         {
             var dlg = new OpenFileDialog { Filter = "PDF files (*.pdf)|*.pdf" };
@@ -48,6 +49,7 @@ public partial class MainWindow : Window
                 OpenSafely(dlg.FileName);
         };
         DataContext = _vm;
+        _vm.Status = $"Scribbles ({BuildStamp()}) — open a PDF to start writing. Pen draws, touch scrolls.";
         App.Themes.ThemeChanged += (_, theme) =>
         {
             _settings = _settings with { Theme = theme };
@@ -77,9 +79,18 @@ public partial class MainWindow : Window
             _session.ApplyToolToAll();
             SyncPenControls();
             RebuildPalette();
+            ToggleTextOverlays();
             UpdateUndoRedoState();
+            RefreshRecentMenu();
             CheckForAutosave();
         };
+        PageList.ItemContainerGenerator.StatusChanged += (_, _) =>
+        {
+            // Containers materialize asynchronously (and recycle while scrolling).
+            _session.SyncContainers();
+            ToggleTextOverlays();
+        };
+        PageScroll.ScrollChanged += (_, _) => ToggleTextOverlays();
 
         var args = Environment.GetCommandLineArgs();
         if (args.Length > 1 && File.Exists(args[1]))
@@ -229,6 +240,183 @@ public partial class MainWindow : Window
     {
         _pen.SetTool((sender as FrameworkElement)?.Tag as string);
         _session.ApplyToolToAll();
+        ToggleTextOverlays();
+        ClearAllTextHighlights();
+        _textSelections.Clear();
+        if (_pen.Tool == PenTool.TextSelect)
+        {
+            int total = _vm.Pages.Sum(p => p.Words.Count);
+            _textSelections.Clear();
+            _vm.Status = total == 0
+                ? "No selectable text in this document (scanned images?)."
+                : $"~{total:N0} selectable word(s) — drag over text to select, Ctrl+C to copy.";
+        }
+    }
+
+    private void ToggleTextOverlays()
+    {
+        bool textMode = _pen.Tool == PenTool.TextSelect;
+        foreach (var overlay in CanvasExplorer.FindOverlays(PageScroll))
+            overlay.Visibility = textMode ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    private void ClearAllTextHighlights()
+    {
+        foreach (var overlay in CanvasExplorer.FindOverlays(PageScroll))
+            overlay.Children.Clear();
+    }
+
+    // ---------- native text selection (browser-like: select, then copy) ----------
+
+    private Point? _marqueeStartDip;
+
+    /// <summary>Reading-order lines cached for the in-progress drag.</summary>
+    private IReadOnlyList<IReadOnlyList<PdfWord>>? _readingLines;
+
+    /// <summary>Current text selection per page (highlighted until cleared).</summary>
+    private readonly Dictionary<int, SelectedText> _textSelections = new();
+
+    private static Brush AccentBrush(double opacity)
+    {
+        var accent = (Color)Application.Current.FindResource("AppAccentColor");
+        return new SolidColorBrush(Color.FromArgb((byte)(255 * opacity), accent.R, accent.G, accent.B));
+    }
+
+    private static SelectionRect MarqueeToPoints(PageViewModel page, Point startDip, Point endDip) => new(
+        Math.Min(startDip.X, endDip.X) / page.DipPerPtX,
+        Math.Min(startDip.Y, endDip.Y) / page.DipPerPtY,
+        Math.Abs(endDip.X - startDip.X) / page.DipPerPtX,
+        Math.Abs(endDip.Y - startDip.Y) / page.DipPerPtY);
+
+    private static void PaintWordHighlights(Canvas overlay, PageViewModel page, SelectedText selected)
+    {
+        var highlight = AccentBrush(0.35);
+        foreach (var word in selected.Words)
+        {
+            var rect = new System.Windows.Shapes.Rectangle
+            {
+                Fill = highlight,
+                Width = word.Width * page.DipPerPtX,
+                Height = word.Height * page.DipPerPtY,
+            };
+            Canvas.SetLeft(rect, word.X * page.DipPerPtX);
+            Canvas.SetTop(rect, word.Y * page.DipPerPtY);
+            overlay.Children.Add(rect);
+        }
+    }
+
+    private SelectedText SelectUnderMarquee(PageViewModel page, Point startDip, Point endDip) =>
+        TextSelector.Select(page.Words, MarqueeToPoints(page, startDip, endDip));
+
+    /// <summary>
+    /// Browser anchor-range, snapping to the nearest word so a press
+    /// slightly off the glyphs still anchors; marquee fallback only when
+    /// text is truly far from both ends of the drag.
+    /// </summary>
+    private SelectedText SelectBetween(PageViewModel page, Point startDip, Point endDip)
+    {
+        double ax = startDip.X / page.DipPerPtX, ay = startDip.Y / page.DipPerPtY;
+        double fx = endDip.X / page.DipPerPtX, fy = endDip.Y / page.DipPerPtY;
+        var anchor = TextSelector.WordAt(page.Words, ax, ay)
+            ?? TextSelector.WordNearest(page.Words, ax, ay);
+        var focus = TextSelector.WordAt(page.Words, fx, fy)
+            ?? TextSelector.WordNearest(page.Words, fx, fy);
+        if (anchor is not null && focus is not null)
+        {
+            var lines = _readingLines ?? TextSelector.OrderReading(page.Words);
+            return TextSelector.Range(lines, anchor, focus);
+        }
+        return SelectUnderMarquee(page, startDip, endDip);
+    }
+
+    private void TextOverlay_Down(object sender, MouseButtonEventArgs e)
+    {
+        if (sender is not Canvas overlay || overlay.DataContext is not PageViewModel page)
+            return;
+        // Fresh drag: clear this page's selection. The anchor is the word under
+        // the cursor (browser behavior — no selection box).
+        _textSelections.Remove(page.Number);
+        overlay.Children.Clear();
+        _marqueeStartDip = e.GetPosition(overlay);
+        _readingLines = TextSelector.OrderReading(page.Words);
+        overlay.CaptureMouse();
+        // Take keyboard focus so Ctrl+C reaches the text selection instead of
+        // whatever toolbar box was focused before (e.g. the zoom level).
+        overlay.Focus();
+        e.Handled = true;
+    }
+
+    private void TextOverlay_Move(object sender, MouseEventArgs e)
+    {
+        if (_marqueeStartDip is null
+            || sender is not Canvas overlay || overlay.DataContext is not PageViewModel page)
+            return;
+        if (e.LeftButton != MouseButtonState.Pressed)
+            return;
+        // Live highlight while dragging, browser-style (no box visual).
+        var selected = SelectBetween(page, _marqueeStartDip.Value, e.GetPosition(overlay));
+        _textSelections[page.Number] = selected;
+        overlay.Children.Clear();
+        PaintWordHighlights(overlay, page, selected);
+    }
+
+    private void TextOverlay_Up(object sender, MouseButtonEventArgs e)
+    {
+        if (sender is not Canvas overlay)
+            return;
+        overlay.ReleaseMouseCapture();
+        if (_marqueeStartDip is null || overlay.DataContext is not PageViewModel page)
+            return;
+        var end = e.GetPosition(overlay);
+        var start = _marqueeStartDip.Value;
+        _marqueeStartDip = null;
+        _readingLines = null;
+
+        // Treat a plain click as "clear selection".
+        if (Math.Abs(end.X - start.X) < 3 && Math.Abs(end.Y - start.Y) < 3)
+        {
+            _textSelections.Remove(page.Number);
+            overlay.Children.Clear();
+            _vm.Status = "Selection cleared. Drag over text to select.";
+            return;
+        }
+
+        if (page.Words.Count == 0)
+        {
+            _vm.Status = "No selectable text on this page (scanned image?).";
+            return;
+        }
+
+        var selected = SelectBetween(page, start, end);
+        _textSelections[page.Number] = selected;
+        overlay.Children.Clear();
+        PaintWordHighlights(overlay, page, selected);
+
+        _vm.Status = selected.Words.Count == 0
+            ? "No text under the cursor."
+            : $"Selected {selected.Words.Count} word(s) — Ctrl+C to copy.";
+        e.Handled = true;
+    }
+
+    private void CopyTextSelection()
+    {
+        if (_pen.Tool != PenTool.TextSelect)
+            return; // let TextBoxes etc. handle Ctrl+C themselves
+        var selected = _textSelections.Values.FirstOrDefault(s => s.Words.Count > 0);
+        if (selected is null)
+        {
+            _vm.Status = "Nothing to copy — drag over text to select first.";
+            return;
+        }
+        try
+        {
+            Clipboard.SetText(selected.Text);
+            _vm.Status = $"Copied {selected.Words.Count} word(s) to the clipboard.";
+        }
+        catch (Exception ex)
+        {
+            _vm.Status = $"Copy failed: {ex.Message}";
+        }
     }
 
     private void PickColor(Color color, uint argb)
@@ -315,10 +503,14 @@ public partial class MainWindow : Window
         if (sender is not InkCanvas ink)
             return;
         // Palm rejection + pen/touch split: touch always scrolls, pen uses the active tool.
+        // Text-select mode draws nothing: the overlay handles the mouse marquee.
         var kind = InputClassification.Classify(e.StylusDevice.TabletDevice.Type.ToString());
-        if (InputClassification.ShouldScroll(kind) && kind != InputKind.Mouse)
+        if (_pen.Tool == PenTool.TextSelect
+            || (InputClassification.ShouldScroll(kind) && kind != InputKind.Mouse))
         {
             ink.EditingMode = InkCanvasEditingMode.None; // let ScrollViewer pan
+            if (_pen.Tool == PenTool.TextSelect)
+                ink.Focus(); // keep Ctrl+C on the selection, not the toolbar
             return;
         }
         _pen.ApplyTo(ink);
@@ -355,11 +547,47 @@ public partial class MainWindow : Window
     {
         try
         {
+            _textSelections.Clear();
             _session.OpenDocument(path, _vm);
+            _settings = _settings with { RecentFiles = Core.RecentFiles.Add(_settings.RecentFiles, path) };
+            PersistSettings();
+            RefreshRecentMenu();
+            // Containers materialize async: re-apply overlay visibility after layout.
+            Dispatcher.BeginInvoke(
+                System.Windows.Threading.DispatcherPriority.Loaded,
+                new Action(ToggleTextOverlays));
         }
         catch (Exception ex)
         {
             _vm.Status = $"Could not open PDF: {ex.Message}";
+        }
+    }
+
+    private void RecentMenu_Opened(object sender, RoutedEventArgs e) => RefreshRecentMenu();
+
+    /// <summary>
+    /// Populated eagerly (not only when opened): a childless menu item never
+    /// opens its submenu, which made Recent look like a dead button.
+    /// </summary>
+    private void RefreshRecentMenu()
+    {
+        var files = Core.RecentFiles.PruneMissing(_settings.RecentFiles);
+        if (_settings.RecentFiles.Length != files.Length)
+        {
+            _settings = _settings with { RecentFiles = files };
+            PersistSettings();
+        }
+        RecentMenuItem.Items.Clear();
+        if (files.Length == 0)
+        {
+            RecentMenuItem.Items.Add(new MenuItem { Header = "(empty)", IsEnabled = false });
+            return;
+        }
+        foreach (string path in files)
+        {
+            var item = new MenuItem { Header = path };
+            item.Click += (_, _) => OpenSafely(path);
+            RecentMenuItem.Items.Add(item);
         }
     }
 
@@ -404,7 +632,63 @@ public partial class MainWindow : Window
         }
     }
 
+    // ---------- pinch zoom (two-finger touch) ----------
+
+    private readonly Dictionary<int, Point> _touches = new();
+    private double _pinchStartDist;
+    private double _pinchStartZoom;
+
+    private static double TouchDistance(Point a, Point b)
+    {
+        double dx = a.X - b.X, dy = a.Y - b.Y;
+        return Math.Sqrt(dx * dx + dy * dy);
+    }
+
+    private void PageScroll_TouchDown(object sender, TouchEventArgs e)
+    {
+        _touches[e.TouchDevice.Id] = e.GetTouchPoint(PageScroll).Position;
+        if (_touches.Count == 2)
+        {
+            var points = _touches.Values.ToArray();
+            _pinchStartDist = TouchDistance(points[0], points[1]);
+            _pinchStartZoom = _vm.Zoom;
+        }
+    }
+
+    private void PageScroll_TouchMove(object sender, TouchEventArgs e)
+    {
+        if (!_touches.ContainsKey(e.TouchDevice.Id))
+            return;
+        _touches[e.TouchDevice.Id] = e.GetTouchPoint(PageScroll).Position;
+        if (_touches.Count == 2)
+        {
+            var points = _touches.Values.ToArray();
+            _vm.Pinch(_pinchStartDist, TouchDistance(points[0], points[1]));
+        }
+    }
+
+    private void PageScroll_TouchUp(object sender, TouchEventArgs e)
+    {
+        _touches.Remove(e.TouchDevice.Id);
+    }
+
     // ---------- misc ----------
+
+    /// <summary>Exe write time, so a stale build is identifiable from the status bar.</summary>
+    private static string BuildStamp()
+    {
+        try
+        {
+            string? path = Environment.ProcessPath;
+            if (string.IsNullOrEmpty(path))
+                return "dev";
+            return File.GetLastWriteTime(path).ToString("dd-MMM HH:mm");
+        }
+        catch
+        {
+            return "dev";
+        }
+    }
 
     private void ToolBar_Loaded(object sender, RoutedEventArgs e)
     {

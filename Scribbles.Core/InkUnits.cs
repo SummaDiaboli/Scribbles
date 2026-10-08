@@ -9,8 +9,10 @@ public static class InkUnits
 {
     public const double DipsPerPoint = 96.0 / 72.0;
 
+    [Obsolete("Renderers fit pages to dimensions instead of exact DPI — use the per-page factors (BaseWidth / WidthPt).")]
     public static double DipToPt(double dip) => dip / DipsPerPoint;
 
+    [Obsolete("Renderers fit pages to dimensions instead of exact DPI — use the per-page factors (BaseWidth / WidthPt).")]
     public static double PtToDip(double pt) => pt * DipsPerPoint;
 
     /// <summary>PDF user space is y-up; everything else here is y-down.</summary>

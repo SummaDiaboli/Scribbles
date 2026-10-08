@@ -30,4 +30,32 @@ internal static class CanvasExplorer
 
     public static int GetPageNumber(InkCanvas ink) =>
         (ink.DataContext as PageViewModel)?.Number ?? 0;
+
+    public static IEnumerable<Canvas> FindOverlays(DependencyObject? root)
+    {
+        foreach (var child in FindVisualChildren(root))
+        {
+            if (child is Canvas canvas && (child as FrameworkElement)?.Name == "TextOverlay")
+                yield return canvas;
+        }
+    }
+
+    private static IEnumerable<DependencyObject> FindVisualChildren(DependencyObject? root)
+    {
+        if (root is null)
+            yield break;
+        var stack = new Stack<DependencyObject>();
+        stack.Push(root);
+        while (stack.Count > 0)
+        {
+            var current = stack.Pop();
+            int count = System.Windows.Media.VisualTreeHelper.GetChildrenCount(current);
+            for (int i = 0; i < count; i++)
+            {
+                var child = System.Windows.Media.VisualTreeHelper.GetChild(current, i);
+                yield return child;
+                stack.Push(child);
+            }
+        }
+    }
 }

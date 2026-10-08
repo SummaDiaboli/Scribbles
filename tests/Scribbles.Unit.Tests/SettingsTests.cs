@@ -40,6 +40,21 @@ public sealed class SettingsTests
     }
 
     [Fact]
+    public void SettingsService_LegacyFile_MissingFieldsFallBackToDefaults()
+    {
+        // Real crash (2026-10-08): a settings.json written before RecentFiles
+        // existed deserializes with null arrays and kills startup.
+        string path = TempPath();
+        File.WriteAllText(path, """{"theme":1,"penColorArgb":4278190080}""");
+        var loaded = SettingsService.Load(path);
+        loaded.Theme.ShouldBe(AppTheme.Dark);
+        loaded.Palette.ShouldNotBeNull();
+        loaded.Palette.ShouldNotBeEmpty();
+        loaded.RecentFiles.ShouldNotBeNull();
+        loaded.RecentFiles.ShouldBeEmpty();
+    }
+
+    [Fact]
     public void SettingsService_MissingFile_ReturnsDefaults()
     {
         SettingsService.Load(TempPath()).ShouldBe(AppSettings.Default);

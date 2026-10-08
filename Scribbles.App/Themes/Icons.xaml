@@ -294,4 +294,25 @@
             </DrawingGroup>
         </DrawingImage.Drawing>
     </DrawingImage>
+    <DrawingImage x:Key="IconType">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <GeometryDrawing Pen="{StaticResource IconPen}">
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M12 4v16"/>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <GeometryDrawing Pen="{StaticResource IconPen}">
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M4 7V5a1 1 0 0 1 1-1h14a1 1 0 0 1 1 1v2"/>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <GeometryDrawing Pen="{StaticResource IconPen}">
+                    <GeometryDrawing.Geometry>
+                        <PathGeometry Figures="M9 20h6"/>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
 </ResourceDictionary>

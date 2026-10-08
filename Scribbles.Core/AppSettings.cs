@@ -33,7 +33,8 @@ public sealed record AppSettings(
     string[] Palette,
     int AutosaveSeconds,
     bool ExportCopyableDefault,
-    WindowPlacement? Window) : IEquatable<AppSettings>
+    WindowPlacement? Window,
+    string[] RecentFiles)
 {
     public bool Equals(AppSettings? other) =>
         other is not null
@@ -44,7 +45,8 @@ public sealed record AppSettings(
         && Palette.SequenceEqual(other.Palette)
         && AutosaveSeconds == other.AutosaveSeconds
         && ExportCopyableDefault == other.ExportCopyableDefault
-        && Equals(Window, other.Window);
+        && Equals(Window, other.Window)
+        && RecentFiles.SequenceEqual(other.RecentFiles);
 
     public override int GetHashCode()
     {
@@ -58,6 +60,8 @@ public sealed record AppSettings(
         hash.Add(AutosaveSeconds);
         hash.Add(ExportCopyableDefault);
         hash.Add(Window);
+        foreach (var f in RecentFiles)
+            hash.Add(f);
         return hash.ToHashCode();
     }
 
@@ -69,5 +73,6 @@ public sealed record AppSettings(
         new[] { "#FF000000", "#FF005FB8", "#FFD13438", "#FF107C10" },
         30,
         false,
-        new WindowPlacement(100, 100, 1100, 750, false));
+        new WindowPlacement(100, 100, 1100, 750, false),
+        Array.Empty<string>());
 }

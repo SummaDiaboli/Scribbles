@@ -29,7 +29,7 @@ public sealed class InkModelConverter
 
     public void Clear() => _ids.Clear();
 
-    public InkStroke ToModel(Stroke stroke, int pageNumber)
+    public InkStroke ToModel(Stroke stroke, int pageNumber, double dipPerPtX, double dipPerPtY)
     {
         var attrs = stroke.DrawingAttributes;
         var (a, r, g, b) = (attrs.Color.A, attrs.Color.R, attrs.Color.G, attrs.Color.B);
@@ -38,28 +38,28 @@ public sealed class InkModelConverter
         {
             float pressure = 0.5f;
             try { pressure = (float)sp.PressureFactor; } catch { /* default */ }
-            points.Add(new StrokePoint(InkUnits.DipToPt(sp.X), InkUnits.DipToPt(sp.Y), pressure));
+            points.Add(new StrokePoint(sp.X / dipPerPtX, sp.Y / dipPerPtY, pressure));
         }
         return new InkStroke(
             GetId(stroke),
             pageNumber,
             attrs.IsHighlighter ? ToolKind.Highlighter : ToolKind.Pen,
             InkUnits.ToArgb(a, r, g, b),
-            InkUnits.DipToPt(attrs.Width),
+            attrs.Width / dipPerPtX,
             points);
     }
 
-    public Stroke FromModel(InkStroke model)
+    public Stroke FromModel(InkStroke model, double dipPerPtX, double dipPerPtY)
     {
         var points = new StylusPointCollection(model.Points.Count);
         foreach (var p in model.Points)
-            points.Add(new StylusPoint(InkUnits.PtToDip(p.X), InkUnits.PtToDip(p.Y), p.Pressure));
+            points.Add(new StylusPoint(p.X * dipPerPtX, p.Y * dipPerPtY, p.Pressure));
         var (a, r, g, b) = InkUnits.FromArgb(model.ColorArgb);
         var attrs = new DrawingAttributes
         {
             Color = Color.FromArgb(a, r, g, b),
-            Width = Math.Max(1, InkUnits.PtToDip(model.WidthPt)),
-            Height = Math.Max(1, InkUnits.PtToDip(model.WidthPt)),
+            Width = Math.Max(1, model.WidthPt * dipPerPtX),
+            Height = Math.Max(1, model.WidthPt * dipPerPtY),
             FitToCurve = true,
             IgnorePressure = false,
             IsHighlighter = model.Tool == ToolKind.Highlighter,

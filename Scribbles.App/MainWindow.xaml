@@ -12,6 +12,7 @@
         <KeyBinding Key="Z" Modifiers="Ctrl" Command="{Binding UndoCommand}"/>
         <KeyBinding Key="Y" Modifiers="Ctrl" Command="{Binding RedoCommand}"/>
         <KeyBinding Key="Delete" Command="{Binding DeleteSelectionCommand}"/>
+        <KeyBinding Key="C" Modifiers="Ctrl" Command="{Binding CopyTextCommand}"/>
     </Window.InputBindings>
     <Window.Resources>
     </Window.Resources>
@@ -19,6 +20,7 @@
         <Menu DockPanel.Dock="Top" Background="{DynamicResource AppSurface}" Foreground="{DynamicResource AppForeground}">
             <MenuItem Header="_File">
                 <MenuItem Header="_Open PDF…" Command="{Binding OpenPdfCommand}" InputGestureText="Ctrl+O"/>
+                <MenuItem x:Name="RecentMenuItem" Header="_Recent" SubmenuOpened="RecentMenu_Opened"/>
                 <MenuItem Header="_Save" Command="{Binding SaveCommand}" InputGestureText="Ctrl+S"/>
                 <MenuItem Header="Save _As…" Click="SaveAs_Click"/>
                 <Separator/>
@@ -42,6 +44,7 @@
                     <MenuItem x:Name="UndoMenuItem" Header="_Undo" Command="{Binding UndoCommand}" InputGestureText="Ctrl+Z" IsEnabled="False"/>
                     <MenuItem x:Name="RedoMenuItem" Header="_Redo" Command="{Binding RedoCommand}" InputGestureText="Ctrl+Y" IsEnabled="False"/>
                     <Separator/>
+                    <MenuItem Header="_Copy text selection" Command="{Binding CopyTextCommand}" InputGestureText="Ctrl+C"/>
                     <MenuItem Header="_Delete selection" Command="{Binding DeleteSelectionCommand}" InputGestureText="Del"/>
                 </MenuItem>
         </Menu>
@@ -80,6 +83,9 @@
                     <RadioButton GroupName="PenTools" ToolTip="Lasso select — move, resize, recolor, delete" Style="{StaticResource IconToggle}" Click="Tool_Click" Tag="Lasso">
                         <Image Source="{StaticResource IconLasso}" Width="18" Height="18"/>
                     </RadioButton>
+                    <RadioButton GroupName="PenTools" ToolTip="Text select — drag over PDF text to copy" Style="{StaticResource IconToggle}" Click="Tool_Click" Tag="TextSelect">
+                        <Image Source="{StaticResource IconType}" Width="18" Height="18"/>
+                    </RadioButton>
                     <Separator/>
                     <StackPanel x:Name="PalettePanel" Orientation="Horizontal" VerticalAlignment="Center"/>
                     <Button ToolTip="Custom color…" Style="{StaticResource IconButton}" Click="Picker_Click">
@@ -116,8 +122,11 @@
         <ScrollViewer x:Name="PageScroll" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
                       PanningMode="Both" PanningDeceleration="0.001" PanningRatio="1"
                       Background="{DynamicResource AppBackground}"
-                      PreviewMouseWheel="PageScroll_PreviewMouseWheel">
-            <ItemsControl ItemsSource="{Binding Pages}">
+                      PreviewMouseWheel="PageScroll_PreviewMouseWheel"
+                      PreviewTouchDown="PageScroll_TouchDown"
+                      PreviewTouchMove="PageScroll_TouchMove"
+                      PreviewTouchUp="PageScroll_TouchUp">
+            <ItemsControl x:Name="PageList" ItemsSource="{Binding Pages}">
                 <ItemsControl.ItemsPanel>
                     <ItemsPanelTemplate>
                         <VirtualizingStackPanel Orientation="Vertical"/>
@@ -135,9 +144,14 @@
                                            PreviewStylusDown="PageInk_PreviewStylusDown"
                                            PreviewTouchDown="PageInk_PreviewTouchDown">
                                     <InkCanvas.DefaultDrawingAttributes>
-                                        <DrawingAttributes Color="Black" Width="3.5" Height="3.5" FitToCurve="True" IgnorePressure="False"/>
+                                        <DrawingAttributes Color="Black" Width="2" Height="2" FitToCurve="True" IgnorePressure="False"/>
                                     </InkCanvas.DefaultDrawingAttributes>
                                 </InkCanvas>
+                                <Canvas x:Name="TextOverlay" Background="Transparent" Visibility="Collapsed"
+                                        Focusable="True"
+                                        PreviewMouseLeftButtonDown="TextOverlay_Down"
+                                        PreviewMouseMove="TextOverlay_Move"
+                                        PreviewMouseLeftButtonUp="TextOverlay_Up"/>
                             </Grid>
                         </Border>
                     </DataTemplate>
