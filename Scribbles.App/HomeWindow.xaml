@@ -24,7 +24,14 @@
                         <Border Width="168" Margin="8" Padding="8" Cursor="Hand"
                                 Background="{DynamicResource AppSurface}"
                                 BorderBrush="{DynamicResource AppBorder}" BorderThickness="1" CornerRadius="8"
-                                MouseLeftButtonUp="Card_Open" ToolTip="{Binding Path}">
+                                MouseLeftButtonUp="Card_Open" Tag="{Binding}" ToolTip="{Binding Path}">
+                            <Border.ContextMenu>
+                                <ContextMenu DataContext="{Binding PlacementTarget.Tag, RelativeSource={RelativeSource Self}}">
+                                    <MenuItem Header="Open" Click="CardMenu_Open"/>
+                                    <MenuItem Header="Rename…" Click="CardMenu_Rename"/>
+                                    <MenuItem Header="Delete" Click="CardMenu_Delete"/>
+                                </ContextMenu>
+                            </Border.ContextMenu>
                             <StackPanel>
                                 <Border Height="150" Background="{DynamicResource AppBackground}" CornerRadius="4">
                                     <Image Source="{Binding Thumbnail}" Stretch="Uniform"/>

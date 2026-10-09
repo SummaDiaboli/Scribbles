@@ -165,6 +165,78 @@ public partial class HomeWindow : Window
             OpenDocument(card.Path);
     }
 
+    private void CardMenu_Open(object sender, RoutedEventArgs e)
+    {
+        if ((sender as FrameworkElement)?.DataContext is HomeCard card)
+            OpenDocument(card.Path);
+    }
+
+    private async void CardMenu_Rename(object sender, RoutedEventArgs e)
+    {
+        if ((sender as FrameworkElement)?.DataContext is not HomeCard card)
+            return;
+        string? dir = Path.GetDirectoryName(card.Path);
+        if (dir is null)
+            return;
+        var dlg = new RenameDialog(Path.GetFileNameWithoutExtension(card.Name))
+        {
+            Owner = this,
+        };
+        if (dlg.ShowDialog() != true || dlg.NewName is null)
+            return;
+        string target = Path.Combine(dir, dlg.NewName + ".pdf");
+        try
+        {
+            if (string.Equals(target, card.Path, StringComparison.Ordinal))
+                return; // unchanged
+            bool sameFile = string.Equals(target, card.Path, StringComparison.OrdinalIgnoreCase);
+            if (!sameFile && File.Exists(target))
+            {
+                StatusText.Text = $"Rename failed: {dlg.NewName}.pdf already exists.";
+                return;
+            }
+            File.Move(card.Path, target, overwrite: false);
+        }
+        catch (Exception ex)
+        {
+            StatusText.Text = $"Rename failed: {ex.Message}";
+            return;
+        }
+        App.Settings = App.Settings with
+        {
+            RecentFiles = RecentFiles.Rename(App.Settings.RecentFiles, card.Path, target),
+        };
+        App.SaveSettings();
+        StatusText.Text = $"Renamed to {Path.GetFileName(target)}.";
+        await RefreshAsync();
+    }
+
+    private async void CardMenu_Delete(object sender, RoutedEventArgs e)
+    {
+        if ((sender as FrameworkElement)?.DataContext is not HomeCard card)
+            return;
+        try
+        {
+            // Recycle bin, not permanent deletion.
+            Microsoft.VisualBasic.FileIO.FileSystem.DeleteFile(
+                card.Path,
+                Microsoft.VisualBasic.FileIO.UIOption.OnlyErrorDialogs,
+                Microsoft.VisualBasic.FileIO.RecycleOption.SendToRecycleBin);
+        }
+        catch (Exception ex)
+        {
+            StatusText.Text = $"Delete failed: {ex.Message}";
+            return;
+        }
+        App.Settings = App.Settings with
+        {
+            RecentFiles = RecentFiles.Remove(App.Settings.RecentFiles, card.Path),
+        };
+        App.SaveSettings();
+        StatusText.Text = $"Deleted {card.Name} (recycle bin).";
+        await RefreshAsync();
+    }
+
     private void NewNotebook_Click(object sender, RoutedEventArgs e)
     {
         try

@@ -261,6 +261,29 @@ public sealed class OffscreenRenderTests
     }
 
     [Fact]
+    public void HomeCards_HaveOpenRenameDeleteMenu()
+    {
+        // Every home card (notebooks + recents) must offer open/rename/delete.
+        // The menu binds through PlacementTarget.Tag: ContextMenu lives
+        // outside the visual tree and does not inherit the card context.
+        string dir = Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "Scribbles.App");
+        string xaml = File.ReadAllText(Path.GetFullPath(Path.Combine(dir, "HomeWindow.xaml")));
+        int cardAt = xaml.IndexOf("MouseLeftButtonUp=\"Card_Open\"", StringComparison.Ordinal);
+        cardAt.ShouldBeGreaterThan(-1, "home card template should exist");
+        int headStart = Math.Max(0, cardAt - 400);
+        string head = xaml.Substring(headStart, Math.Min(800, xaml.Length - headStart));
+        head.Contains("Tag=\"{Binding}\"").ShouldBeTrue("card must expose itself for the menu");
+        int menuAt = xaml.IndexOf("<Border.ContextMenu>", cardAt, StringComparison.Ordinal);
+        menuAt.ShouldBeGreaterThan(-1, "card context menu should exist");
+        int menuEnd = xaml.IndexOf("</Border.ContextMenu>", menuAt, StringComparison.Ordinal);
+        string menu = xaml.Substring(menuAt, menuEnd - menuAt);
+        menu.Contains("PlacementTarget.Tag").ShouldBeTrue("menu must bind through the card tag");
+        menu.Contains("CardMenu_Open").ShouldBeTrue("menu needs Open");
+        menu.Contains("CardMenu_Rename").ShouldBeTrue("menu needs Rename");
+        menu.Contains("CardMenu_Delete").ShouldBeTrue("menu needs Delete");
+    }
+
+    [Fact]
     public void IconToggle_Checked_ShowsAccentTint() => Sta(() =>
     {
         EnsureThemedApp("Dark");
