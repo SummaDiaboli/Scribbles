@@ -227,6 +227,22 @@ public sealed class OffscreenRenderTests
     }
 
     [Fact]
+    public void SidebarMagnifier_PrefersCompositedThumbnail()
+    {
+        // Regression guard: the hover magnifier bound the bare base Image, so
+        // the enlarged preview never showed ink even though the small thumb
+        // did. It must prefer the composited Thumbnail with Image as fallback.
+        string dir = Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "Scribbles.App");
+        string xaml = File.ReadAllText(Path.GetFullPath(Path.Combine(dir, "MainWindow.xaml")));
+        int tipAt = xaml.IndexOf("<Border.ToolTip>", StringComparison.Ordinal);
+        tipAt.ShouldBeGreaterThan(-1, "sidebar thumb tooltip should exist");
+        int tipEnd = xaml.IndexOf("</Border.ToolTip>", tipAt, StringComparison.Ordinal);
+        string tip = xaml.Substring(tipAt, tipEnd - tipAt);
+        tip.Contains("Path=\"Thumbnail\"").ShouldBeTrue("magnifier must show the ink-composited thumbnail");
+        tip.Contains("Source=\"{Binding Image}\"").ShouldBeFalse("magnifier must not bind the bare base render");
+    }
+
+    [Fact]
     public void IconToggle_Checked_ShowsAccentTint() => Sta(() =>
     {
         EnsureThemedApp("Dark");
@@ -254,6 +270,27 @@ public sealed class OffscreenRenderTests
     });
 
     [Fact]
+    public void DarkComboFace_RendersLightTextOnSurface() => Sta(() =>
+    {
+        EnsureThemedApp("Dark");
+        var combo = new ComboBox
+        {
+            Style = (Style)Application.Current.FindResource(typeof(ComboBox)),
+            Width = 120,
+            Height = 30,
+        };
+        combo.Items.Add("Light");
+        combo.Items.Add("Dark");
+        combo.SelectedIndex = 1;
+        var bmp = Render(combo, 120, 30);
+        int total = bmp.PixelWidth * bmp.PixelHeight;
+        int surface = CountNear(bmp, 0x2D, 0x2D, 0x2D, 16);
+        surface.ShouldBeGreaterThan(total / 2, "combo face should be the dark surface");
+        int light = CountNear(bmp, 0xF3, 0xF3, 0xF3, 24);
+        light.ShouldBeGreaterThan(20, "combo selection should render in the light foreground");
+    });
+
+    [Fact]
     public void DarkComboRow_RendersLightTextOnDarkSurface() => Sta(() =>
     {
         EnsureThemedApp("Dark");
@@ -269,5 +306,53 @@ public sealed class OffscreenRenderTests
         dark.ShouldBeLessThan(total, "row must paint something");
         int light = CountNear(bmp, 0xF3, 0xF3, 0xF3, 24);
         light.ShouldBeGreaterThan(20, "combo text should render in the light foreground");
+    });
+
+    [Fact]
+    public void ThumbCard_CurrentPage_RendersAccentBorder() => Sta(() =>
+    {
+        EnsureThemedApp("Dark");
+        var style = (Style)Application.Current.FindResource("ThumbCard");
+        var vm = new Scribbles.App.ViewModels.PageViewModel { Number = 3, IsCurrentPage = true };
+        var card = new Border
+        {
+            Style = style,
+            Width = 100,
+            Height = 60,
+            DataContext = vm,
+        };
+        var bmp = Render(card, 100, 60);
+        // Dark accent #4CC2FF.
+        int accent = CountNear(bmp, 0x4C, 0xC2, 0xFF, 24);
+        accent.ShouldBeGreaterThan(50, "current-page thumb must show the accent border");
+
+        vm.IsCurrentPage = false;
+        card.UpdateLayout();
+        var plain = Render(card, 100, 60);
+        int still = CountNear(plain, 0x4C, 0xC2, 0xFF, 24);
+        still.ShouldBeLessThan(accent, "non-current thumb must drop the accent border");
+    });
+
+    [Fact]
+    public void OnAccent_ContrastsWithAccent_InBothThemes() => Sta(() =>
+    {
+        foreach (string theme in new[] { "Dark", "Light" })
+        {
+            EnsureThemedApp(theme);
+            var accent = (Color)Application.Current.FindResource("AppAccentColor");
+            var onAccent = (Color)Application.Current.FindResource("AppOnAccentColor");
+            double Contrast(Color c)
+            {
+                double Lin(byte v)
+                {
+                    double s = v / 255.0;
+                    return s <= 0.03928 ? s / 12.92 : Math.Pow((s + 0.055) / 1.055, 2.4);
+                }
+                return 0.2126 * Lin(c.R) + 0.7152 * Lin(c.G) + 0.0722 * Lin(c.B);
+            }
+            double l1 = Contrast(accent), l2 = Contrast(onAccent);
+            double ratio = (Math.Max(l1, l2) + 0.05) / (Math.Min(l1, l2) + 0.05);
+            ratio.ShouldBeGreaterThan(3.0, $"{theme} on-accent text must stay readable");
+        }
     });
 }

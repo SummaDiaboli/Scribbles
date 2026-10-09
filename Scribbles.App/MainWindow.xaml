@@ -27,6 +27,8 @@
                 <Separator/>
                 <MenuItem Header="_Recover autosave…" Click="Recover_Click"/>
                 <Separator/>
+                <MenuItem Header="Add _blank page" Click="AddPage_Click"/>
+                <Separator/>
                 <MenuItem Header="_Settings…" Click="Settings_Click"/>
                 <Separator/>
                 <MenuItem Header="E_xit" Click="Exit_Click"/>
@@ -53,8 +55,8 @@
                 </MenuItem>
         </Menu>
 
-        <Border DockPanel.Dock="Top" Background="{DynamicResource AppSurface}" BorderBrush="{DynamicResource AppBorder}" BorderThickness="1" CornerRadius="10" Margin="8,8,8,4" Padding="4,2">
-            <ToolBar Background="Transparent" Foreground="{DynamicResource AppForeground}" Loaded="ToolBar_Loaded">
+        <ToolBarTray DockPanel.Dock="Top" Background="{DynamicResource AppSurface}">
+            <ToolBar x:Name="MainToolbar" Background="Transparent" Foreground="{DynamicResource AppForeground}" Band="1" BandIndex="1">
                     <Button Command="{Binding OpenPdfCommand}" ToolTip="Open PDF (Ctrl+O)" Style="{StaticResource IconButton}">
                         <Image Source="{StaticResource IconFolderOpen}" Width="18" Height="18"/>
                     </Button>
@@ -144,15 +146,77 @@
                         <Image Source="{StaticResource IconTrash}" Width="18" Height="18"/>
                     </Button>
             </ToolBar>
-        </Border>
+        </ToolBarTray>
 
         <StatusBar DockPanel.Dock="Bottom" Background="{DynamicResource AppSurface}" Foreground="{DynamicResource AppForeground}">
             <StatusBarItem>
                 <TextBlock Text="{Binding Status}" TextWrapping="Wrap"/>
             </StatusBarItem>
         </StatusBar>
+        <!-- Empty drop target so the toolbar can be dragged to the bottom. -->
+        <ToolBarTray DockPanel.Dock="Bottom" Background="{DynamicResource AppSurface}" MinHeight="6"/>
 
-        <ScrollViewer x:Name="PageScroll" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
+        <Grid x:Name="CenterGrid">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition x:Name="SidebarColumn" Width="168" MinWidth="36" MaxWidth="340"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+            <Border x:Name="Sidebar" Grid.Column="0"
+                    Background="{DynamicResource AppSurface}" BorderBrush="{DynamicResource AppBorder}" BorderThickness="0,0,1,0">
+                <DockPanel>
+                    <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="6">
+                        <Button x:Name="SidebarToggle" Content="«" Width="24" Height="24" Padding="0"
+                                ToolTip="Collapse sidebar" Click="SidebarToggle_Click"/>
+                        <TextBlock x:Name="SidebarTitle" Text="Pages" VerticalAlignment="Center" Margin="8,0,0,0" FontWeight="SemiBold"/>
+                    </StackPanel>
+                    <ScrollViewer x:Name="ThumbScroll" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                        <ItemsControl x:Name="ThumbList" ItemsSource="{Binding Pages}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Border Margin="8,0,8,8" Padding="4" Cursor="Hand"
+                                            CornerRadius="6"
+                                            MouseLeftButtonUp="Thumb_Open" Tag="{Binding Number}"
+                                            Style="{StaticResource ThumbCard}">
+                                        <StackPanel>
+                                            <Image Stretch="Uniform">
+                                                <Image.Source>
+                                                    <PriorityBinding>
+                                                        <Binding Path="Thumbnail"/>
+                                                        <Binding Path="Image"/>
+                                                    </PriorityBinding>
+                                                </Image.Source>
+                                            </Image>
+                                            <TextBlock Text="{Binding Number}" HorizontalAlignment="Center" FontSize="11" Opacity="0.7"/>
+                                        </StackPanel>
+                                        <Border.ToolTip>
+                                            <ToolTip Background="{DynamicResource AppSurface}" BorderBrush="{DynamicResource AppBorder}"
+                                                     ToolTipService.InitialShowDelay="400" ToolTipService.ShowDuration="2000"
+                                                     ToolTipService.BetweenShowDelay="100">
+                                                <StackPanel>
+                                                    <Image Width="300" Stretch="Uniform">
+                                                        <Image.Source>
+                                                            <PriorityBinding>
+                                                                <Binding Path="Thumbnail"/>
+                                                                <Binding Path="Image"/>
+                                                            </PriorityBinding>
+                                                        </Image.Source>
+                                                    </Image>
+                                                    <TextBlock Text="Go to page" HorizontalAlignment="Center" FontSize="11" Opacity="0.7"/>
+                                                </StackPanel>
+                                            </ToolTip>
+                                        </Border.ToolTip>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </ScrollViewer>
+                </DockPanel>
+            </Border>
+            <GridSplitter Grid.Column="1" Width="6" HorizontalAlignment="Stretch" VerticalAlignment="Stretch"
+                          Background="Transparent" ResizeDirection="Columns" ResizeBehavior="PreviousAndNext"
+                          ShowsPreview="True" ToolTip="Drag to resize the sidebar"/>
+            <ScrollViewer Grid.Column="2" x:Name="PageScroll" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
                       PanningMode="Both" PanningDeceleration="0.001" PanningRatio="1"
                       Background="{DynamicResource AppBackground}"
                       PreviewMouseWheel="PageScroll_PreviewMouseWheel"
@@ -221,5 +285,6 @@
                 </ItemsControl.ItemTemplate>
             </ItemsControl>
         </ScrollViewer>
+        </Grid>
     </DockPanel>
 </Window>

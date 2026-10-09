@@ -94,14 +94,14 @@ internal sealed class DocumentSession
     }
 
     /// <summary>Re-renders one page's image and words after a true text edit.</summary>
-    public void RefreshPage(MainViewModel vm, int pageNumber)
+    public async Task RefreshPageAsync(MainViewModel vm, int pageNumber)
     {
         if (CurrentBytes is null)
             return;
         var page = vm.Pages.FirstOrDefault(p => p.Number == pageNumber);
         if (page is null)
             return;
-        var rendered = new DocnetPdfRenderer().RenderSinglePage(CurrentBytes, pageNumber);
+        var rendered = await new DocnetPdfRenderer().RenderSinglePageAsync(CurrentBytes, pageNumber).ConfigureAwait(true);
         page.WidthPt = rendered.WidthPt;
         page.HeightPt = rendered.HeightPt;
         page.Image = rendered.Image;
@@ -209,6 +209,26 @@ internal sealed class DocumentSession
         }
     }
 
+    /// <summary>Model strokes for one page (live canvas or stash) for thumbnails.</summary>
+    public IReadOnlyList<InkStroke> CollectStrokes(PageViewModel page)
+    {
+        var canvas = CanvasForPage(page.Number);
+        if (canvas is null)
+        {
+            return _stash.TryGetValue(page.Number, out var stashed)
+                ? stashed.Select(ApplyMeta).ToList()
+                : Array.Empty<InkStroke>();
+        }
+        return canvas.Strokes
+            .Select(s =>
+            {
+                var (mode, text) = MetaFor(_converter.GetId(s));
+                return _converter.ToModel(s, page.Number, page.DipPerPtX, page.DipPerPtY)
+                    with { Mode = mode, RecognizedText = text };
+            })
+            .ToList();
+    }
+
     public NoteDocument CollectModel(IEnumerable<PageViewModel> pages)
     {
         var result = new List<NotePage>();
@@ -239,12 +259,19 @@ internal sealed class DocumentSession
         return new NoteDocument("", result);
     }
 
-    public void OpenDocument(string path, MainViewModel vm)
+    /// <summary>
+    /// Async open: file read + PdfSharp parse + PdfPig sizes/words run on pool
+    /// threads; stash seeding touches view-models back on the UI thread.
+    /// </summary>
+    public async Task OpenDocumentAsync(string path, MainViewModel vm)
     {
-        byte[] bytes = File.ReadAllBytes(path);
-        var loaded = _store.Load(bytes);
+        var (bytes, loaded) = await Task.Run(() =>
+        {
+            byte[] raw = File.ReadAllBytes(path);
+            return (raw, _store.Load(raw));
+        }).ConfigureAwait(true);
 
-        vm.LoadPdf(path);
+        await vm.LoadPdfAsync(path, bytes).ConfigureAwait(true);
         _converter.Clear();
         _history.Clear();
         _stash.Clear();
@@ -302,7 +329,8 @@ internal sealed class DocumentSession
         var model = CollectModel(vm.Pages);
         if (enrichAsync is not null)
             model = await enrichAsync(model);
-        byte[] exported = _store.ExportFlat(CurrentBytes, model);
+        byte[] current = CurrentBytes;
+        byte[] exported = await Task.Run(() => _store.ExportFlat(current, model)).ConfigureAwait(true);
         File.WriteAllBytes(targetPath, exported);
         vm.Status = $"Exported flattened copy to {Path.GetFileName(targetPath)}.";
     }
@@ -316,7 +344,11 @@ internal sealed class DocumentSession
         box.DisplayFontSize = Math.Clamp(box.FontSizePt * fx, 8, 96);
     }
 
-    public void Save(MainViewModel vm, string? path, Func<string?> promptSaveAs)
+    /// <summary>
+    /// Async save: model collection stays on the UI thread (live ink is
+    /// thread-affine); serialize + write run on a pool thread.
+    /// </summary>
+    public async Task SaveAsync(MainViewModel vm, string? path, Func<string?> promptSaveAs)
     {
         if (CurrentBytes is null)
         {
@@ -330,12 +362,19 @@ internal sealed class DocumentSession
             if (path is null)
                 return;
         }
-        byte[] saved = _store.Save(CurrentBytes, CollectModel(vm.Pages));
-        File.WriteAllBytes(path, saved);
-        CurrentPath = path;
+        var model = CollectModel(vm.Pages);
+        byte[] current = CurrentBytes;
+        string target = path;
+        byte[] saved = await Task.Run(() =>
+        {
+            byte[] bytes = _store.Save(current, model);
+            File.WriteAllBytes(target, bytes);
+            return bytes;
+        }).ConfigureAwait(true);
+        CurrentPath = target;
         CurrentBytes = saved;
         SetClean();
-        vm.Status = $"Saved {Path.GetFileName(path)}.";
+        vm.Status = $"Saved {Path.GetFileName(target)}.";
     }
 
     public void RestoreSnapshot(int page, PageState state)
@@ -395,14 +434,52 @@ internal sealed class DocumentSession
         }
     }
 
-    public byte[] SaveWorkingCopy(MainViewModel vm, AutosaveService autosave)
+    public async Task<byte[]> SaveWorkingCopyAsync(MainViewModel vm, AutosaveService autosave)
     {
         if (CurrentBytes is null)
             return Array.Empty<byte>();
-        byte[] saved = _store.Save(CurrentBytes, CollectModel(vm.Pages));
-        autosave.Save(AutosaveService.KeyFor(CurrentPath), saved, CurrentPath);
+        var model = CollectModel(vm.Pages);
+        byte[] current = CurrentBytes;
+        string? source = CurrentPath;
+        byte[] saved = await Task.Run(() =>
+        {
+            byte[] bytes = _store.Save(current, model);
+            autosave.Save(AutosaveService.KeyFor(source), bytes, source);
+            return bytes;
+        }).ConfigureAwait(true);
         SetClean();
         return saved;
+    }
+
+    /// <summary>Appends a blank page (same size as the last) to the open document.</summary>
+    public async Task AddBlankPageAsync(MainViewModel vm)
+    {
+        if (CurrentBytes is null)
+        {
+            vm.Status = "Open a document first.";
+            return;
+        }
+        var last = vm.Pages.LastOrDefault();
+        if (last is null)
+        {
+            vm.Status = "Open a document first.";
+            return;
+        }
+        CurrentBytes = NotebookDocuments.AddBlankPage(CurrentBytes, last.WidthPt, last.HeightPt);
+        MarkDirty();
+        var rendered = await new DocnetPdfRenderer().RenderSinglePageAsync(CurrentBytes, vm.Pages.Count + 1).ConfigureAwait(true);
+        vm.Pages.Add(new PageViewModel
+        {
+            Number = vm.Pages.Count + 1,
+            WidthPt = rendered.WidthPt,
+            HeightPt = rendered.HeightPt,
+            Image = rendered.Image,
+            BaseWidth = rendered.Image.Width / 2.0,
+            BaseHeight = rendered.Image.Height / 2.0,
+            DisplayScale = vm.Zoom,
+            Words = rendered.Words,
+        });
+        vm.Status = $"Page {vm.Pages.Count} added.";
     }
 
     private void SetClean()

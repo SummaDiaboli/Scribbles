@@ -34,7 +34,8 @@ public sealed record AppSettings(
     int AutosaveSeconds,
     bool ExportCopyableDefault,
     WindowPlacement? Window,
-    string[] RecentFiles)
+    string[] RecentFiles,
+    List<LastPage> LastPages)
 {
     public bool Equals(AppSettings? other) =>
         other is not null
@@ -46,7 +47,8 @@ public sealed record AppSettings(
         && AutosaveSeconds == other.AutosaveSeconds
         && ExportCopyableDefault == other.ExportCopyableDefault
         && Equals(Window, other.Window)
-        && RecentFiles.SequenceEqual(other.RecentFiles);
+        && RecentFiles.SequenceEqual(other.RecentFiles)
+        && LastPages.SequenceEqual(other.LastPages);
 
     public override int GetHashCode()
     {
@@ -62,6 +64,11 @@ public sealed record AppSettings(
         hash.Add(Window);
         foreach (var f in RecentFiles)
             hash.Add(f);
+        foreach (var l in LastPages)
+        {
+            hash.Add(l.Path);
+            hash.Add(l.Page);
+        }
         return hash.ToHashCode();
     }
 
@@ -74,5 +81,6 @@ public sealed record AppSettings(
         30,
         false,
         new WindowPlacement(100, 100, 1100, 750, false),
-        Array.Empty<string>());
+        Array.Empty<string>(),
+        new List<LastPage>());
 }

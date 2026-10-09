@@ -17,34 +17,58 @@ public sealed class DocnetPdfRenderer
         int Number, double WidthPt, double HeightPt, BitmapSource Image,
         IReadOnlyList<Core.PdfWord> Words);
 
-    public IReadOnlyList<RenderedPage> Render(string filePath, double renderScale = 2.0) =>
-        RenderBytes(File.ReadAllBytes(filePath), renderScale);
-
-    public IReadOnlyList<RenderedPage> RenderBytes(byte[] bytes, double renderScale = 2.0)
+    /// <summary>Re-renders a single 1-based page (used after true text edits).</summary>
+    public async Task<RenderedPage> RenderSinglePageAsync(byte[] bytes, int pageNumber1, double renderScale = 2.0)
     {
-        // True page sizes in points (MediaBox), for the Core coordinate transforms.
-        var sizes = PdfPageSizes.Read(bytes);
-        var words = PdfTextExtractor.ExtractPages(bytes);
-
+        var content = await Task.Run(() => PdfPageContentReader.Read(bytes)).ConfigureAwait(false);
         int targetDim = (int)(1080 * renderScale);
-        using var docReader = DocLib.Instance.GetDocReader(bytes, new PageDimensions(targetDim, targetDim));
-        int count = docReader.GetPageCount();
-        var pages = new List<RenderedPage>(count);
-
-        for (int i = 0; i < count; i++)
-            pages.Add(RenderOne(docReader, sizes, words, i, renderScale));
-
-        return pages;
+        await PdfiumGate.Instance.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            using var docReader = DocLib.Instance.GetDocReader(bytes, new PageDimensions(targetDim, targetDim));
+            return RenderOne(docReader, content.Sizes, content.Words, pageNumber1 - 1, renderScale);
+        }
+        finally
+        {
+            PdfiumGate.Instance.Release();
+        }
     }
 
-    /// <summary>Re-renders a single 1-based page (used after true text edits).</summary>
-    public RenderedPage RenderSinglePage(byte[] bytes, int pageNumber1, double renderScale = 2.0)
+    /// <summary>Small first-page raster for home-grid thumbnails.</summary>
+    public async Task<BitmapSource?> RenderFirstPageAsync(byte[] bytes, int targetDim = 320)
     {
-        var sizes = PdfPageSizes.Read(bytes);
-        var words = PdfTextExtractor.ExtractPages(bytes);
-        int targetDim = (int)(1080 * renderScale);
-        using var docReader = DocLib.Instance.GetDocReader(bytes, new PageDimensions(targetDim, targetDim));
-        return RenderOne(docReader, sizes, words, pageNumber1 - 1, renderScale);
+        return await Task.Run(() =>
+        {
+            try
+            {
+                // Sync wait: pool thread, never the UI thread.
+                PdfiumGate.Instance.Wait();
+                try
+                {
+                    using var docReader = DocLib.Instance.GetDocReader(bytes, new PageDimensions(targetDim, targetDim));
+                    if (docReader.GetPageCount() < 1)
+                        return null;
+                    using var pageReader = docReader.GetPageReader(0);
+                    byte[] raw = pageReader.GetImage();
+                    int w = pageReader.GetPageWidth();
+                    int h = pageReader.GetPageHeight();
+                    if (w <= 0 || h <= 0)
+                        return null;
+                    var bitmap = BitmapSource.Create(w, h, 96, 96,
+                        PixelFormats.Bgra32, null, raw, w * 4);
+                    bitmap.Freeze();
+                    return bitmap;
+                }
+                finally
+                {
+                    PdfiumGate.Instance.Release();
+                }
+            }
+            catch
+            {
+                return null;
+            }
+        }).ConfigureAwait(false);
     }
 
     private static RenderedPage RenderOne(

@@ -7,7 +7,7 @@
     <SolidColorBrush x:Key="{x:Static SystemColors.MenuTextBrushKey}" Color="{DynamicResource AppForegroundColor}"/>
     <SolidColorBrush x:Key="{x:Static SystemColors.MenuHighlightBrushKey}" Color="{DynamicResource AppBorderColor}"/>
     <SolidColorBrush x:Key="{x:Static SystemColors.HighlightBrushKey}" Color="{DynamicResource AppAccentColor}"/>
-    <SolidColorBrush x:Key="{x:Static SystemColors.HighlightTextBrushKey}" Color="#FFFFFFFF"/>
+    <SolidColorBrush x:Key="{x:Static SystemColors.HighlightTextBrushKey}" Color="{DynamicResource AppOnAccentColor}"/>
     <SolidColorBrush x:Key="{x:Static SystemColors.ControlBrushKey}" Color="{DynamicResource AppSurfaceColor}"/>
     <SolidColorBrush x:Key="{x:Static SystemColors.ControlTextBrushKey}" Color="{DynamicResource AppForegroundColor}"/>
     <SolidColorBrush x:Key="{x:Static SystemColors.ControlLightBrushKey}" Color="{DynamicResource AppBorderColor}"/>
@@ -70,7 +70,7 @@
             </Trigger>
             <Trigger Property="IsHighlighted" Value="True">
                 <Setter TargetName="Row" Property="Background" Value="{DynamicResource AppAccent}"/>
-                <Setter Property="Foreground" Value="White"/>
+                <Setter Property="Foreground" Value="{DynamicResource AppOnAccent}"/>
             </Trigger>
             <Trigger Property="IsEnabled" Value="False">
                 <Setter Property="Foreground" Value="{DynamicResource AppBorder}"/>
@@ -111,11 +111,11 @@
         <ControlTemplate.Triggers>
             <Trigger Property="IsHighlighted" Value="True">
                 <Setter TargetName="Row" Property="Background" Value="{DynamicResource AppAccent}"/>
-                <Setter Property="Foreground" Value="White"/>
+                <Setter Property="Foreground" Value="{DynamicResource AppOnAccent}"/>
             </Trigger>
             <Trigger Property="IsSubmenuOpen" Value="True">
                 <Setter TargetName="Row" Property="Background" Value="{DynamicResource AppAccent}"/>
-                <Setter Property="Foreground" Value="White"/>
+                <Setter Property="Foreground" Value="{DynamicResource AppOnAccent}"/>
             </Trigger>
         </ControlTemplate.Triggers>
     </ControlTemplate>
@@ -140,7 +140,7 @@
         <Style.Triggers>
             <Trigger Property="IsHighlighted" Value="True">
                 <Setter Property="Background" Value="{DynamicResource AppAccent}"/>
-                <Setter Property="Foreground" Value="White"/>
+                <Setter Property="Foreground" Value="{DynamicResource AppOnAccent}"/>
             </Trigger>
         </Style.Triggers>
     </Style>
@@ -148,6 +148,58 @@
         <Setter Property="Background" Value="{DynamicResource AppSurface}"/>
         <Setter Property="Foreground" Value="{DynamicResource AppForeground}"/>
         <Setter Property="BorderBrush" Value="{DynamicResource AppBorder}"/>
+        <Setter Property="Padding" Value="8,4,24,4"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ComboBox">
+                    <Grid>
+                        <ToggleButton x:Name="ToggleButton" Focusable="False" ClickMode="Press"
+                                      IsChecked="{Binding IsDropDownOpen, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}">
+                            <ToggleButton.Template>
+                                <ControlTemplate TargetType="ToggleButton">
+                                    <Border Background="{Binding Background, RelativeSource={RelativeSource AncestorType=ComboBox}}"
+                                            BorderBrush="{Binding BorderBrush, RelativeSource={RelativeSource AncestorType=ComboBox}}"
+                                            BorderThickness="1" CornerRadius="4"/>
+                                </ControlTemplate>
+                            </ToggleButton.Template>
+                        </ToggleButton>
+                        <ContentPresenter x:Name="ContentSite" IsHitTestVisible="False"
+                                          Margin="{TemplateBinding Padding}" VerticalAlignment="Center"
+                                          Content="{TemplateBinding SelectionBoxItem}"
+                                          ContentTemplate="{TemplateBinding SelectionBoxItemTemplate}"
+                                          TextElement.Foreground="{TemplateBinding Foreground}"/>
+                        <TextBox x:Name="PART_EditableTextBox" Margin="{TemplateBinding Padding}"
+                                 VerticalAlignment="Center" Background="Transparent"
+                                 Foreground="{TemplateBinding Foreground}" BorderThickness="0"
+                                 IsReadOnly="{TemplateBinding IsReadOnly}"/>
+                        <Path IsHitTestVisible="False" HorizontalAlignment="Right" Margin="0,0,10,0"
+                              VerticalAlignment="Center" Fill="{TemplateBinding Foreground}"
+                              Data="M 0 0 L 5 0 L 2.5 3.5 Z"/>
+                        <Popup x:Name="PART_Popup" IsOpen="{TemplateBinding IsDropDownOpen}"
+                               Placement="Bottom" Focusable="False" PopupAnimation="Slide">
+                            <Border Background="{DynamicResource AppSurface}"
+                                    BorderBrush="{DynamicResource AppBorder}" BorderThickness="1"
+                                    MaxHeight="{TemplateBinding MaxDropDownHeight}" MinWidth="{TemplateBinding ActualWidth}">
+                                <ScrollViewer>
+                                    <StackPanel IsItemsHost="True"/>
+                                </ScrollViewer>
+                            </Border>
+                        </Popup>
+                    </Grid>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsEditable" Value="False">
+                            <Setter TargetName="PART_EditableTextBox" Property="Visibility" Value="Collapsed"/>
+                        </Trigger>
+                        <Trigger Property="IsEditable" Value="True">
+                            <Setter TargetName="ContentSite" Property="Visibility" Value="Collapsed"/>
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter Property="Opacity" Value="0.5"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
     </Style>
     <!-- Explicit button chrome: the OS theme paints light faces that clash
          with dark-mode text. Toolbar icon buttons keep their own styles. -->
@@ -174,7 +226,7 @@
                         </Trigger>
                         <Trigger Property="IsPressed" Value="True">
                             <Setter TargetName="Face" Property="Background" Value="{DynamicResource AppAccent}"/>
-                            <Setter Property="Foreground" Value="White"/>
+                            <Setter Property="Foreground" Value="{DynamicResource AppOnAccent}"/>
                         </Trigger>
                         <Trigger Property="IsKeyboardFocused" Value="True">
                             <Setter TargetName="Face" Property="BorderBrush" Value="{DynamicResource AppAccent}"/>
@@ -263,6 +315,20 @@
     <SolidColorBrush x:Key="HoverFill" Color="{DynamicResource AppBorderColor}" Opacity="0.45"/>
     <SolidColorBrush x:Key="PressedFill" Color="{DynamicResource AppAccentColor}" Opacity="0.35"/>
     <SolidColorBrush x:Key="CheckedFill" Color="{DynamicResource AppAccentColor}" Opacity="0.28"/>
+    <!-- Sidebar / home card chrome. Base values live HERE (not inline): local
+         values would beat the IsCurrentPage trigger and the highlight would
+         never show. -->
+    <Style x:Key="ThumbCard" TargetType="Border">
+        <Setter Property="Background" Value="{DynamicResource AppBackground}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource AppBorder}"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Style.Triggers>
+            <DataTrigger Binding="{Binding IsCurrentPage}" Value="True">
+                <Setter Property="BorderBrush" Value="{DynamicResource AppAccent}"/>
+                <Setter Property="BorderThickness" Value="2"/>
+            </DataTrigger>
+        </Style.Triggers>
+    </Style>
     <Style x:Key="IconButton" TargetType="Button">
         <Setter Property="Width" Value="32"/>
         <Setter Property="Height" Value="32"/>

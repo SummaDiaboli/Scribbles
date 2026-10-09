@@ -57,7 +57,7 @@ public sealed class OpenRealizeTests
         new[] { new StrokePoint(100, 200, 0.8f), new StrokePoint(150, 220, 0.4f) });
 
     [Fact]
-    public void Open_StashesModel_ThenRealizationRestoresStrokesAndHooks() => Sta(() =>
+    public void Open_StashesModel_ThenRealizationRestoresStrokesAndHooks() => Sta(async () =>
     {
         EnsureThemedApp("Light");
         var store = new ScribblesPdfStore();
@@ -74,7 +74,7 @@ public sealed class OpenRealizeTests
             store, converter, new StrokeHistory(converter, BoxesOf(vm)), new PenToolbarController(),
             () => inks, SetBoxesOf(vm));
 
-        session.OpenDocument(path, vm);
+        await session.OpenDocumentAsync(path, vm);
         vm.Pages.Count.ShouldBe(1);
 
         // Containers don't exist yet: nothing may be lost, nothing hooked.

@@ -27,6 +27,7 @@ public partial class MainWindow : Window
     private readonly DocumentSession _session;
     private readonly AutosaveService _autosave = new();
     private readonly DispatcherTimer _autosaveTimer;
+    private readonly PageRenderQueue _renderQueue = new();
     private readonly HandwritingRecognizer _recognizer = new();
     private AppSettings _settings = App.Settings;
 
@@ -39,17 +40,18 @@ public partial class MainWindow : Window
             new ScribblesPdfStore(), _converter, _history, _pen,
             () => CanvasExplorer.Find(PageScroll), SetBoxesFor);
         _session.StateChanged += (_, _) => UpdateUndoRedoState();
-        _vm.RequestSave += (_, _) => SaveSafely(saveAs: false);
+        _session.StateChanged += (_, _) => ScheduleThumbRefresh();
+        _vm.RequestSave += async (_, _) => await SaveSafelyAsync(saveAs: false);
         _vm.RequestUndo += (_, _) => _session.Undo(TargetPages());
         _vm.RequestRedo += (_, _) => _session.Redo(TargetPages());
         _vm.RequestDeleteSelection += (_, _) => _session.DeleteSelection();
         _vm.RequestDeleteSelection += (_, _) => DeleteFocusedTextBox();
         _vm.RequestCopyText += (_, _) => CopyTextSelection();
-        _vm.RequestOpen += (_, _) =>
+        _vm.RequestOpen += async (_, _) =>
         {
             var dlg = new OpenFileDialog { Filter = "PDF files (*.pdf)|*.pdf" };
             if (dlg.ShowDialog() == true)
-                OpenSafely(dlg.FileName);
+                await OpenSafelyAsync(dlg.FileName);
         };
         DataContext = _vm;
         Title = $"Scribbles {AppVersion()}";
@@ -67,38 +69,115 @@ public partial class MainWindow : Window
         {
             Interval = TimeSpan.FromSeconds(Math.Clamp(_settings.AutosaveSeconds, 10, 300)),
         };
-        _autosaveTimer.Tick += (_, _) => { if (_session.IsDirty) SaveWorkingCopy(); };
+        _autosaveTimer.Tick += async (_, _) => { if (_session.IsDirty) await SaveWorkingCopyAsync(); };
         _autosaveTimer.Start();
 
-        Closing += (_, _) =>
+        bool closing = false;
+        Closing += async (_, e) =>
         {
+            if (closing)
+            {
+                RecordCurrentPage();
+                SavePlacementAndSettings();
+                _renderQueue.Dispose();
+                return;
+            }
             if (_session.IsDirty)
-                SaveWorkingCopy();
+            {
+                // Finish the background save before the windows die.
+                e.Cancel = true;
+                closing = true;
+                try
+                {
+                    await SaveWorkingCopyAsync();
+                }
+                catch { /* closing anyway */ }
+                Close();
+                return;
+            }
+            RecordCurrentPage();
             SavePlacementAndSettings();
+            _renderQueue.Dispose();
         };
 
-        Loaded += (_, _) =>
-        {
-            _session.HookCanvases();
-            _session.ApplyToolToAll();
-            SyncPenControls();
-            RebuildPalette();
-            ToggleTextOverlays();
-            UpdateUndoRedoState();
-            RefreshRecentMenu();
-            CheckForAutosave();
-        };
+        Loaded += (_, _) => OnLoadedInternal();
         PageList.ItemContainerGenerator.StatusChanged += (_, _) =>
         {
             // Containers materialize asynchronously (and recycle while scrolling).
             _session.SyncContainers();
             ToggleTextOverlays();
+            RequestVisibleRenders();
         };
-        PageScroll.ScrollChanged += (_, _) => ToggleTextOverlays();
+        PageScroll.ScrollChanged += (_, _) => { ToggleTextOverlays(); UpdateCurrentPage(); };
+    }
 
-        var args = Environment.GetCommandLineArgs();
-        if (args.Length > 1 && File.Exists(args[1]))
-            Loaded += (_, _) => OpenSafely(args[1]);
+    private DispatcherTimer? _thumbTimer;
+
+    /// <summary>Debounced sidebar thumbnail refresh after ink edits.</summary>
+    private void ScheduleThumbRefresh()
+    {
+        _thumbTimer ??= new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(600) };
+        _thumbTimer.Tick -= ThumbTimer_Tick;
+        _thumbTimer.Tick += ThumbTimer_Tick;
+        _thumbTimer.Stop();
+        _thumbTimer.Start();
+    }
+
+    private void ThumbTimer_Tick(object? sender, EventArgs e)
+    {
+        _thumbTimer?.Stop();
+        RefreshThumbnails();
+    }
+
+    /// <summary>Composites live ink onto every rendered page's sidebar thumb.</summary>
+    private void RefreshThumbnails()
+    {
+        foreach (var vm in _vm.Pages)
+        {
+            if (vm.Image is null)
+                continue;
+            vm.Thumbnail = InkThumbnailComposer.Compose(
+                vm.Image, vm.WidthPt, vm.HeightPt, _session.CollectStrokes(vm));
+        }
+    }
+
+    /// <summary>Queues rasters for realized pages that have none yet.</summary>
+    private void RequestVisibleRenders()
+    {
+        int generation = _renderQueue.Generation;
+        foreach (var ink in CanvasExplorer.Find(PageScroll))
+        {
+            int page = CanvasExplorer.GetPageNumber(ink);
+            var vm = PageVm(page);
+            if (vm is null || vm.Image is not null)
+                continue;
+            _renderQueue.Request(page, (p, image) => Dispatcher.BeginInvoke(() =>
+            {
+                // Drop late arrivals from a previous document.
+                if (generation != _renderQueue.Generation)
+                    return;
+                var target = PageVm(p);
+                if (target is not null)
+                {
+                    target.Image = image;
+                    target.Thumbnail = InkThumbnailComposer.Compose(
+                        image, target.WidthPt, target.HeightPt, _session.CollectStrokes(target));
+                }
+            }));
+        }
+    }
+
+    /// <summary>Loaded-time wiring, extracted so headless tests can drive it.</summary>
+    internal void OnLoadedInternal()
+    {
+        _session.HookCanvases();
+        _session.ApplyToolToAll();
+        SyncPenControls();
+        RebuildPalette();
+        ToggleTextOverlays();
+        UpdateUndoRedoState();
+        RefreshRecentMenu();
+        CheckForAutosave();
     }
 
     // ---------- settings + placement ----------
@@ -647,7 +726,9 @@ public partial class MainWindow : Window
             DiscardNativeEditor(commit: true);
     }
 
-    private void DiscardNativeEditor(bool commit)
+    private void DiscardNativeEditor(bool commit) => _ = DiscardNativeEditorAsync(commit);
+
+    private async Task DiscardNativeEditorAsync(bool commit)
     {
         var editor = _nativeEditor;
         _nativeEditor = null;
@@ -672,7 +753,7 @@ public partial class MainWindow : Window
                 _session.CurrentBytes, _nativePage, _nativeOldText, text.Trim(), out byte[] updated))
         {
             _session.ReplaceBaseBytes(updated);
-            _session.RefreshPage(_vm, _nativePage);
+            await _session.RefreshPageAsync(_vm, _nativePage);
             _textSelections.Remove(_nativePage);
             foreach (var ov in CanvasExplorer.FindOverlays(PageScroll))
             {
@@ -1085,7 +1166,12 @@ public partial class MainWindow : Window
         _vm.Status = "Text box deleted.";
     }
 
-    private void SaveAs_Click(object sender, RoutedEventArgs e) => SaveSafely(saveAs: true);
+    private void SaveAs_Click(object sender, RoutedEventArgs e) => _ = SaveSafelyAsync(saveAs: true);
+
+    /// <summary>Opens a document (used by Home and argument launch).</summary>
+    public void Open(string path) => _ = OpenSafelyAsync(path);
+
+    private void AddPage_Click(object sender, RoutedEventArgs e) => _ = _session.AddBlankPageAsync(_vm);
 
     private async void Export_Click(object sender, RoutedEventArgs e)
     {
@@ -1162,11 +1248,11 @@ public partial class MainWindow : Window
         return model with { Pages = pages };
     }
 
-    private void SaveSafely(bool saveAs)
+    private async Task SaveSafelyAsync(bool saveAs)
     {
         try
         {
-            _session.Save(_vm, saveAs ? null : _session.CurrentPath, () =>
+            await _session.SaveAsync(_vm, saveAs ? null : _session.CurrentPath, () =>
             {
                 var dlg = new SaveFileDialog { Filter = "PDF files (*.pdf)|*.pdf" };
                 return dlg.ShowDialog() == true ? dlg.FileName : null;
@@ -1178,21 +1264,33 @@ public partial class MainWindow : Window
         }
     }
 
-    private void OpenSafely(string path)
+    private async Task OpenSafelyAsync(string path)
     {
         try
         {
+            RecordCurrentPage();
             _textSelections.Clear();
             _focusedTextBox = null;
             UpdateFontControls();
-            _session.OpenDocument(path, _vm);
+            await _session.OpenDocumentAsync(path, _vm);
+            _currentPage = 0;
+            _thumbTimer?.Stop();
+            if (_session.CurrentBytes is not null)
+                _renderQueue.Open(_session.CurrentBytes);
             _settings = _settings with { RecentFiles = Core.RecentFiles.Add(_settings.RecentFiles, path) };
             PersistSettings();
             RefreshRecentMenu();
+            int restorePage = RecentPages.ForPath(_settings.LastPages, path);
             // Containers materialize async: re-apply overlay visibility after layout.
             Dispatcher.BeginInvoke(
                 System.Windows.Threading.DispatcherPriority.Loaded,
-                new Action(ToggleTextOverlays));
+                new Action(() =>
+                {
+                    ToggleTextOverlays();
+                    if (restorePage > 1)
+                        ScrollToPage(restorePage);
+                    UpdateCurrentPage();
+                }));
         }
         catch (Exception ex)
         {
@@ -1223,18 +1321,18 @@ public partial class MainWindow : Window
         foreach (string path in files)
         {
             var item = new MenuItem { Header = path };
-            item.Click += (_, _) => OpenSafely(path);
+            item.Click += async (_, _) => await OpenSafelyAsync(path);
             RecentMenuItem.Items.Add(item);
         }
     }
 
     // ---------- autosave ----------
 
-    private void SaveWorkingCopy()
+    private async Task SaveWorkingCopyAsync()
     {
         try
         {
-            _session.SaveWorkingCopy(_vm, _autosave);
+            await _session.SaveWorkingCopyAsync(_vm, _autosave);
         }
         catch { /* autosave must never interrupt writing */ }
     }
@@ -1256,7 +1354,7 @@ public partial class MainWindow : Window
                 _vm.Status = "No autosaves found.";
                 return;
             }
-            OpenSafely(found.Value.PdfPath);
+            _ = OpenSafelyAsync(found.Value.PdfPath);
             if (!string.IsNullOrEmpty(found.Value.SourcePath) && File.Exists(found.Value.SourcePath))
             {
                 _session.RetargetCurrentPath(found.Value.SourcePath); // keep saving to the real file
@@ -1309,21 +1407,78 @@ public partial class MainWindow : Window
         _touches.Remove(e.TouchDevice.Id);
     }
 
+    // ---------- thumbnail sidebar ----------
+
+    private void SidebarToggle_Click(object sender, RoutedEventArgs e)
+    {
+        bool collapsed = SidebarColumn.Width.Value > 100;
+        SidebarColumn.Width = new GridLength(collapsed ? 36 : 168);
+        SidebarTitle.Visibility = collapsed ? Visibility.Collapsed : Visibility.Visible;
+        ThumbScroll.Visibility = collapsed ? Visibility.Collapsed : Visibility.Visible;
+        SidebarToggle.Content = collapsed ? "»" : "«";
+        SidebarToggle.ToolTip = collapsed ? "Expand sidebar" : "Collapse sidebar";
+    }
+
+    private void Thumb_Open(object sender, MouseButtonEventArgs e)
+    {
+        if ((sender as FrameworkElement)?.Tag is not int pageNumber)
+            return;
+        ScrollToPage(pageNumber);
+    }
+
+    /// <summary>Uniform page stride: rendered height × zoom + card margins.</summary>
+    private double PageStride()
+    {
+        var first = _vm.Pages.FirstOrDefault();
+        return first is null ? 0 : first.BaseHeight * first.DisplayScale + 26;
+    }
+
+    private void ScrollToPage(int pageNumber)
+    {
+        double stride = PageStride();
+        if (stride <= 0 || _vm.Pages.Count == 0)
+            return;
+        PageScroll.ScrollToVerticalOffset(PageScrollMath.OffsetForPage(pageNumber, stride, _vm.Pages.Count));
+    }
+
+    private int CurrentPageNumber()
+    {
+        return PageScrollMath.PageFromOffset(PageScroll.VerticalOffset, PageStride(), _vm.Pages.Count);
+    }
+
+    private int _currentPage;
+
+    /// <summary>Highlights the current thumb and follows it in the sidebar.</summary>
+    private void UpdateCurrentPage()
+    {
+        int page = CurrentPageNumber();
+        if (page == _currentPage)
+            return;
+        _currentPage = page;
+        foreach (var vm in _vm.Pages)
+            vm.IsCurrentPage = vm.Number == page;
+        if (ThumbList.ItemContainerGenerator.ContainerFromIndex(page - 1) is FrameworkElement container)
+            container.BringIntoView();
+    }
+
+    private void RecordCurrentPage()
+    {
+        if (_session.CurrentPath is null || _vm.Pages.Count == 0)
+            return;
+        _settings = _settings with
+        {
+            LastPages = RecentPages.Record(_settings.LastPages, _session.CurrentPath, CurrentPageNumber()).ToList(),
+        };
+        PersistSettings();
+    }
+
     // ---------- misc ----------
 
     /// <summary>App version (SemVer from the assembly) for title/status.</summary>
-    private static string AppVersion()
+    internal static string AppVersion()
     {
         var version = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version;
         return version is null ? "0.0.0" : $"{version.Major}.{version.Minor}.{version.Build}";
-    }
-
-    private void ToolBar_Loaded(object sender, RoutedEventArgs e)
-    {
-        // A standalone ToolBar has no overflow needs — collapse any overflow chrome.
-        if (sender is ToolBar bar
-            && bar.Template.FindName("OverflowGrid", bar) is FrameworkElement overflow)
-            overflow.Visibility = Visibility.Collapsed;
     }
 
     private void Exit_Click(object sender, RoutedEventArgs e) => Application.Current.Shutdown();

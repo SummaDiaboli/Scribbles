@@ -5,6 +5,7 @@ using CommunityToolkit.Mvvm.Input;
 using Microsoft.Win32;
 using Scribbles.App.Services;
 using Scribbles.Core;
+using Scribbles.Pdf;
 
 namespace Scribbles.App.ViewModels;
 
@@ -28,6 +29,14 @@ public sealed partial class PageViewModel : ObservableObject
     /// <summary>Editable text boxes (converted handwriting, native edits).</summary>
     public ObservableCollection<TextBoxItem> TextBoxes { get; } = new();
 
+    /// <summary>Composited thumbnail (base + ink); null until rendered.</summary>
+    [ObservableProperty]
+    private ImageSource? _thumbnail;
+
+    /// <summary>True for the page the main scroll is currently on.</summary>
+    [ObservableProperty]
+    private bool _isCurrentPage;
+
     /// <summary>Fixed base size in DIPs (render pixels / 2). Zoom is a pure visual scale.</summary>
     [ObservableProperty]
     private double _baseWidth;
@@ -49,7 +58,6 @@ public sealed partial class PageViewModel : ObservableObject
 
 public sealed partial class MainViewModel : ObservableObject
 {
-    private readonly DocnetPdfRenderer _renderer = new();
     private readonly ThemeService _themes;
 
     public ObservableCollection<PageViewModel> Pages { get; } = new();
@@ -90,28 +98,36 @@ public sealed partial class MainViewModel : ObservableObject
     /// <summary>Raised when Open is requested. Handled by the view (round-trip rebuild).</summary>
     public event EventHandler? RequestOpen;
 
-    public void LoadPdf(string path)
+    /// <summary>
+    /// Sizes + words parse on a pool thread (PdfPig is free-threaded);
+    /// page list populates back on the UI thread.
+    /// </summary>
+    public async Task LoadPdfAsync(string path, byte[] bytes)
     {
         try
         {
-            Status = $"Rendering {System.IO.Path.GetFileName(path)}…";
-            var rendered = _renderer.Render(path);
+            Status = $"Opening {System.IO.Path.GetFileName(path)}…";
+            // Sizes + words in one PdfPig open (fast); rasters fill in lazily.
+            var content = await Task.Run(() => Pdf.PdfPageContentReader.Read(bytes)).ConfigureAwait(true);
+            var sizes = content.Sizes;
+            var words = content.Words;
             Pages.Clear();
-            foreach (var p in rendered)
+            for (int i = 0; i < sizes.Count; i++)
             {
+                var (baseW, baseH) = RenderDims.NominalBaseDips(sizes[i].Width, sizes[i].Height);
                 Pages.Add(new PageViewModel
                 {
-                    Number = p.Number,
-                    WidthPt = p.WidthPt,
-                    HeightPt = p.HeightPt,
-                    Image = p.Image,
-                    BaseWidth = p.Image.Width / 2.0,
-                    BaseHeight = p.Image.Height / 2.0,
+                    Number = i + 1,
+                    WidthPt = sizes[i].Width,
+                    HeightPt = sizes[i].Height,
+                    Image = null!,
+                    BaseWidth = baseW,
+                    BaseHeight = baseH,
                     DisplayScale = Zoom,
-                    Words = p.Words,
+                    Words = i < words.Count ? words[i] : new List<PdfWord>(),
                 });
             }
-            Status = $"{rendered.Count} page(s). Pen draws, finger scrolls/pinch-zooms.";
+            Status = $"{Pages.Count} page(s). Rendering… Pen draws, finger scrolls/pinch-zooms.";
         }
         catch (Exception ex)
         {
