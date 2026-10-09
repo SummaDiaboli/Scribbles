@@ -1,7 +1,7 @@
 <Window x:Class="Scribbles.App.SettingsWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Settings" Height="380" Width="360"
+        Title="Settings" Height="440" Width="360"
         WindowStartupLocation="CenterOwner" ResizeMode="NoResize"
         Background="{DynamicResource AppBackground}" Foreground="{DynamicResource AppForeground}">
     <StackPanel Margin="16">
@@ -17,7 +17,9 @@
                     IsSnapToTickEnabled="True" Width="220" ValueChanged="AutosaveSlider_ValueChanged"/>
             <TextBlock x:Name="AutosaveLabel" VerticalAlignment="Center" Margin="8,0,0,0"/>
         </StackPanel>
-        <CheckBox x:Name="CopyableBox" Content="Make handwriting copyable on export by default" Margin="0,0,0,16"/>
+        <CheckBox x:Name="CopyableBox" Content="Make handwriting copyable on export by default" Margin="0,0,0,12"/>
+        <TextBlock Text="Update channel" FontWeight="Bold" Margin="0,0,0,4"/>
+        <ComboBox x:Name="ChannelBox" Margin="0,0,0,16" ToolTip="Beta gets new versions earlier; stable stays on tested releases"/>
         <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
             <Button Content="OK" Width="80" Margin="0,0,8,0" IsDefault="True" Click="Ok_Click"/>
             <Button Content="Cancel" Width="80" IsCancel="True"/>

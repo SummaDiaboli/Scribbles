@@ -91,6 +91,8 @@ public partial class HomeWindow : Window
         StatusText.Text = _cards.Count == 0
             ? "No documents yet — create a notebook or open a PDF."
             : $"{_cards.Count} document(s). Click a card to open.";
+        if (App.PendingUpdate is not null)
+            StatusText.Text += $" Update {App.PendingUpdate.TargetFullRelease.Version} downloaded — open a document, then File → Restart to apply update.";
 
         // Thumbnails lazily, off the UI thread (frozen bitmaps cross threads).
         // Cards load concurrently: file I/O + managed parsing run in parallel

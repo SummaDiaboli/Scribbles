@@ -7,12 +7,21 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWPF>true</UseWPF>
     <Version>0.5.0</Version>
+    <!-- Velopack bootstrap runs before any WPF overhead: App.xaml is a Page,
+         StartupObject points at the custom Main in App.xaml.cs. -->
+    <StartupObject>Scribbles.App.App</StartupObject>
   </PropertyGroup>
+
+  <ItemGroup>
+    <ApplicationDefinition Remove="App.xaml" />
+    <Page Include="App.xaml" />
+  </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
     <PackageReference Include="Docnet.Core" Version="2.6.0" />
     <PackageReference Include="PdfSharp" Version="6.2.4" />
+    <PackageReference Include="Velopack" Version="1.2.161" />
   </ItemGroup>
 
   <ItemGroup>

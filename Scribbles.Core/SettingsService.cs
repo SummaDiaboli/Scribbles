@@ -33,6 +33,7 @@ public static class SettingsService
                 Palette = settings.Palette ?? AppSettings.Default.Palette,
                 RecentFiles = settings.RecentFiles ?? AppSettings.Default.RecentFiles,
                 LastPages = settings.LastPages ?? AppSettings.Default.LastPages,
+                UpdateChannel = UpdateChannels.Normalize(settings.UpdateChannel),
             };
         }
         catch

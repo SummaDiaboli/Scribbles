@@ -30,6 +30,7 @@
                 <MenuItem Header="Add _blank page" Click="AddPage_Click"/>
                 <Separator/>
                 <MenuItem Header="_Settings…" Click="Settings_Click"/>
+                <MenuItem x:Name="RestartUpdateItem" Header="_Restart to apply update" Click="RestartUpdate_Click" IsEnabled="False" Visibility="Collapsed"/>
                 <Separator/>
                 <MenuItem Header="E_xit" Click="Exit_Click"/>
             </MenuItem>

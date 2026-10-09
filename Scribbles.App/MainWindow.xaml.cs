@@ -73,6 +73,9 @@ public partial class MainWindow : Window
         _autosaveTimer.Start();
 
         bool closing = false;
+        App.UpdateStaged += OnUpdateStaged;
+        Closed += (_, _) => App.UpdateStaged -= OnUpdateStaged;
+
         Closing += async (_, e) =>
         {
             if (closing)
@@ -178,6 +181,7 @@ public partial class MainWindow : Window
         UpdateUndoRedoState();
         RefreshRecentMenu();
         RefreshRecoverMenu();
+        OnUpdateStaged();
         CheckForAutosave();
     }
 
@@ -1534,6 +1538,31 @@ public partial class MainWindow : Window
     {
         var version = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version;
         return version is null ? "0.0.0" : $"{version.Major}.{version.Minor}.{version.Build}";
+    }
+
+    /// <summary>Shows the restart item when a downloaded update is staged.</summary>
+    private void OnUpdateStaged()
+    {
+        if (App.PendingUpdate is null)
+            return;
+        RestartUpdateItem.Visibility = Visibility.Visible;
+        RestartUpdateItem.IsEnabled = true;
+        _vm.Status = $"Update {App.PendingUpdate.TargetFullRelease.Version} downloaded — restart to apply.";
+    }
+
+    private async void RestartUpdate_Click(object sender, RoutedEventArgs e)
+    {
+        if (App.PendingUpdate is null)
+            return;
+        if (_session.IsDirty)
+        {
+            try
+            {
+                await _session.SaveWorkingCopyAsync(_vm, _autosave);
+            }
+            catch { /* closing anyway */ }
+        }
+        AppUpdater.ApplyAndRestart(App.PendingUpdate, App.Settings.UpdateChannel);
     }
 
     private void Exit_Click(object sender, RoutedEventArgs e) => Application.Current.Shutdown();

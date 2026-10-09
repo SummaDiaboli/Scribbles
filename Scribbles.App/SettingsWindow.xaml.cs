@@ -22,6 +22,8 @@ public partial class SettingsWindow : Window
         SizeBox.SelectedIndex = current.PenSizeDip switch { <= 2.5 => 0, >= 4.5 => 2, _ => 1 };
         AutosaveSlider.Value = Math.Clamp(current.AutosaveSeconds, 10, 120);
         CopyableBox.IsChecked = current.ExportCopyableDefault;
+        ChannelBox.ItemsSource = new[] { UpdateChannels.Stable, UpdateChannels.Beta };
+        ChannelBox.SelectedItem = UpdateChannels.Normalize(current.UpdateChannel);
     }
 
     private void AutosaveSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
@@ -41,6 +43,7 @@ public partial class SettingsWindow : Window
             PenSizeDip = size,
             AutosaveSeconds = (int)AutosaveSlider.Value,
             ExportCopyableDefault = CopyableBox.IsChecked == true,
+            UpdateChannel = UpdateChannels.Normalize(ChannelBox.SelectedItem as string),
         };
         DialogResult = true;
     }
