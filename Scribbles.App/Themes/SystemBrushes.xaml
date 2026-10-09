@@ -132,6 +132,23 @@
             </Trigger>
         </Style.Triggers>
     </Style>
+    <!-- Popup chrome follows the theme with zero per-case work: any new
+         ContextMenu or ToolTip anywhere in the app is themed by default
+         through these implicit styles. Do not set popup colors inline. -->
+    <Style TargetType="ContextMenu">
+        <Setter Property="Background" Value="{DynamicResource AppSurface}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource AppBorder}"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="Foreground" Value="{DynamicResource AppForeground}"/>
+        <Setter Property="Padding" Value="2"/>
+    </Style>
+    <Style TargetType="ToolTip">
+        <Setter Property="Background" Value="{DynamicResource AppSurface}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource AppBorder}"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="Foreground" Value="{DynamicResource AppForeground}"/>
+        <Setter Property="Padding" Value="8,6"/>
+    </Style>
     <!-- ComboBox dropdown rows follow the theme (popup chrome is OS-drawn). -->
     <Style TargetType="ComboBoxItem">
         <Setter Property="Background" Value="Transparent"/>

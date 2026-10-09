@@ -283,6 +283,89 @@ public sealed class OffscreenRenderTests
         menu.Contains("CardMenu_Delete").ShouldBeTrue("menu needs Delete");
     }
 
+    private static string ThemeResourceKey(Style style, DependencyProperty property)
+    {
+        var setter = style.Setters.OfType<Setter>()
+            .FirstOrDefault(s => s.Property == property);
+        setter.ShouldNotBeNull($"implicit style must own {property.Name}");
+        var dynamic = setter!.Value as DynamicResourceExtension;
+        dynamic.ShouldNotBeNull($"{property.Name} must track the theme, not a literal");
+        return dynamic!.ResourceKey?.ToString() ?? "";
+    }
+
+    [Fact]
+    public void PopupStyles_TrackThemeResources() => Sta(() =>
+    {
+        // Long-term guard: any new ContextMenu/ToolTip anywhere in the app is
+        // themed by default through these implicit styles — no per-case fix.
+        EnsureThemedApp("Dark");
+        var contextStyle = (Style)Application.Current.FindResource(typeof(ContextMenu));
+        ThemeResourceKey(contextStyle, Control.BackgroundProperty).ShouldBe("AppSurface");
+        ThemeResourceKey(contextStyle, Control.ForegroundProperty).ShouldBe("AppForeground");
+        var tipStyle = (Style)Application.Current.FindResource(typeof(ToolTip));
+        ThemeResourceKey(tipStyle, Control.BackgroundProperty).ShouldBe("AppSurface");
+        ThemeResourceKey(tipStyle, Control.ForegroundProperty).ShouldBe("AppForeground");
+    });
+
+    [Fact]
+    public void DarkContextMenu_RendersLightTextOnDarkSurface() => Sta(() =>
+    {
+        EnsureThemedApp("Dark");
+
+        // Real ContextMenu parentage (home card menu), rows styled as the app does.
+        var context = new ContextMenu();
+        var open = new MenuItem { Header = "Open" };
+        var rename = new MenuItem { Header = "Rename…" };
+        var delete = new MenuItem { Header = "Delete" };
+        context.Items.Add(open);
+        context.Items.Add(rename);
+        context.Items.Add(delete);
+        var menuStyle = (Style)Application.Current.FindResource(typeof(MenuItem));
+        foreach (var item in new MenuItem[] { open, rename, delete })
+            item.Style = menuStyle;
+        delete.Template = (ControlTemplate)delete.FindResource("SubmenuItemTemplate");
+
+        // Off-screen glyphs are sparse (antialiased edges miss tolerance), so
+        // sum across rows instead of depending on one header's ink.
+        int light = 0;
+        foreach (var item in new MenuItem[] { open, rename, delete })
+            light += CountNear(Render(item, 240, 32), 0xF3, 0xF3, 0xF3, 24);
+        light.ShouldBeGreaterThan(100, "context menu text should render in the light foreground");
+    });
+
+    [Fact]
+    public void XamlColorLiterals_BannedOutsideAllowlist()
+    {
+        // Long-term guard: hardcoded UI colors (White/Black/hex) silently
+        // ignore the theme and caused every "doesn't match the theme" report.
+        // Use DynamicResource/TemplateBinding. Allowlist:
+        // - Themes/*.xaml owns the palette;
+        // - ColorPickerDialog.xaml paints a real color spectrum (content);
+        // - DrawingAttributes defaults are ink content, not UI chrome.
+        string appDir = Path.GetFullPath(Path.Combine(
+            AppContext.BaseDirectory, "..", "..", "..", "..", "..", "Scribbles.App"));
+        var nameLiteral = new System.Text.RegularExpressions.Regex("=\"(White|Black|Gray|LightGray|DarkGray|DimGray)\"");
+        var hexLiteral = new System.Text.RegularExpressions.Regex("#[0-9A-Fa-f]{6}\\b|#[0-9A-Fa-f]{8}\\b");
+        var offenders = new List<string>();
+        foreach (string file in Directory.GetFiles(appDir, "*.xaml", SearchOption.AllDirectories))
+        {
+            string relative = Path.GetRelativePath(appDir, file);
+            if (relative.StartsWith("Themes" + Path.DirectorySeparatorChar))
+                continue;
+            if (string.Equals(Path.GetFileName(file), "ColorPickerDialog.xaml", StringComparison.OrdinalIgnoreCase))
+                continue;
+            string[] lines = File.ReadAllLines(file);
+            for (int i = 0; i < lines.Length; i++)
+            {
+                if (lines[i].Contains("DrawingAttributes"))
+                    continue;
+                if (nameLiteral.IsMatch(lines[i]) || hexLiteral.IsMatch(lines[i]))
+                    offenders.Add($"{relative}:{i + 1}: {lines[i].Trim()}");
+            }
+        }
+        offenders.ShouldBeEmpty("use theme resources instead of literals");
+    }
+
     [Fact]
     public void IconToggle_Checked_ShowsAccentTint() => Sta(() =>
     {
