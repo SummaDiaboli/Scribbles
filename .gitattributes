@@ -1,0 +1,6 @@
+# Binary files must never get CRLF conversion: byte offsets inside PDFs
+# (xref tables) and PNG checksums break, and tests read them verbatim.
+# (Seen 2026-10-09: a smudged sample-text.pdf lost a text line for PdfPig
+# and became unloadable for PdfSharp, failing 5 tests on clean checkouts.)
+*.pdf binary
+*.png binary

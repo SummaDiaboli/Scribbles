@@ -26,6 +26,17 @@ public sealed class SampleTextFixtureTests
     }
 
     [Fact]
+    public void Fixture_HasNoCarriageReturns()
+    {
+        // The xref offsets in this hand-rolled PDF assume LF line endings.
+        // CRLF (e.g. from git line-ending conversion — see .gitattributes)
+        // shifts every offset: PdfPig loses a text line, PdfSharp refuses
+        // the file entirely.
+        byte[] bytes = File.ReadAllBytes(FixturePath());
+        bytes.ShouldNotContain(b => b == 13, "fixture must keep LF line endings");
+    }
+
+    [Fact]
     public void AnchorRange_IsLineBased_NotBox()
     {
         var words = PdfTextExtractor.ExtractPages(File.ReadAllBytes(FixturePath()))[0];

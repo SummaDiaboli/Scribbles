@@ -347,15 +347,18 @@ internal sealed class DocumentSession
     /// <summary>
     /// Async save: model collection stays on the UI thread (live ink is
     /// thread-affine); serialize + write run on a pool thread.
+    /// Save As must always prompt: the CurrentPath fallback applies to plain
+    /// Save only, otherwise Save As silently overwrites the original.
     /// </summary>
-    public async Task SaveAsync(MainViewModel vm, string? path, Func<string?> promptSaveAs)
+    public async Task SaveAsync(MainViewModel vm, string? path, Func<string?> promptSaveAs, bool saveAs = false)
     {
         if (CurrentBytes is null)
         {
             vm.Status = "Nothing to save — open a PDF first.";
             return;
         }
-        path ??= CurrentPath;
+        if (!saveAs)
+            path ??= CurrentPath;
         if (path is null)
         {
             path = promptSaveAs();

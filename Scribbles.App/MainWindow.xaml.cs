@@ -1256,7 +1256,7 @@ public partial class MainWindow : Window
             {
                 var dlg = new SaveFileDialog { Filter = "PDF files (*.pdf)|*.pdf" };
                 return dlg.ShowDialog() == true ? dlg.FileName : null;
-            });
+            }, saveAs);
         }
         catch (Exception ex)
         {
