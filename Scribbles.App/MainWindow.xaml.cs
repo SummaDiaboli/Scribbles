@@ -1413,6 +1413,7 @@ public partial class MainWindow : Window
     {
         bool collapsed = SidebarColumn.Width.Value > 100;
         SidebarColumn.Width = new GridLength(collapsed ? 36 : 168);
+        Sidebar.Margin = collapsed ? new Thickness(0) : new Thickness(8, 8, 4, 8);
         SidebarTitle.Visibility = collapsed ? Visibility.Collapsed : Visibility.Visible;
         ThumbScroll.Visibility = collapsed ? Visibility.Collapsed : Visibility.Visible;
         SidebarToggle.Content = collapsed ? "»" : "«";

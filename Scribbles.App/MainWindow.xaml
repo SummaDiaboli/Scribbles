@@ -55,7 +55,8 @@
                 </MenuItem>
         </Menu>
 
-        <ToolBarTray DockPanel.Dock="Top" Background="{DynamicResource AppSurface}">
+        <Border DockPanel.Dock="Top" Background="{DynamicResource AppSurface}" BorderBrush="{DynamicResource AppBorder}" BorderThickness="1" CornerRadius="10" Margin="8,8,8,4" Padding="4,2">
+            <ToolBarTray Background="Transparent">
             <ToolBar x:Name="MainToolbar" Background="Transparent" Foreground="{DynamicResource AppForeground}" Band="1" BandIndex="1">
                     <Button Command="{Binding OpenPdfCommand}" ToolTip="Open PDF (Ctrl+O)" Style="{StaticResource IconButton}">
                         <Image Source="{StaticResource IconFolderOpen}" Width="18" Height="18"/>
@@ -146,7 +147,8 @@
                         <Image Source="{StaticResource IconTrash}" Width="18" Height="18"/>
                     </Button>
             </ToolBar>
-        </ToolBarTray>
+            </ToolBarTray>
+        </Border>
 
         <StatusBar DockPanel.Dock="Bottom" Background="{DynamicResource AppSurface}" Foreground="{DynamicResource AppForeground}">
             <StatusBarItem>
@@ -162,8 +164,8 @@
                 <ColumnDefinition Width="Auto"/>
                 <ColumnDefinition Width="*"/>
             </Grid.ColumnDefinitions>
-            <Border x:Name="Sidebar" Grid.Column="0"
-                    Background="{DynamicResource AppSurface}" BorderBrush="{DynamicResource AppBorder}" BorderThickness="0,0,1,0">
+            <Border x:Name="Sidebar" Grid.Column="0" Margin="8,8,4,8"
+                    Background="{DynamicResource AppSurface}" BorderBrush="{DynamicResource AppBorder}" BorderThickness="1" CornerRadius="10">
                 <DockPanel>
                     <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="6">
                         <Button x:Name="SidebarToggle" Content="«" Width="24" Height="24" Padding="0"

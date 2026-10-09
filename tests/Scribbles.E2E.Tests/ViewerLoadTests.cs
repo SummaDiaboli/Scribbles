@@ -98,14 +98,16 @@ public sealed class ViewerLoadTests
             trays.Count.ShouldBeGreaterThanOrEqualTo(2, "top and bottom trays should exist");
             var toolbar = FindLogical<ToolBar>(window).FirstOrDefault(t => t.Name == "MainToolbar");
             toolbar.ShouldNotBeNull("the main toolbar should exist");
-            trays[0].ToolBars.ShouldContain(toolbar!);
+            // Identify by content, not index: nesting depth decides BFS order.
+            var top = trays.First(t => t.ToolBars.Contains(toolbar!));
+            var bottom = trays.First(t => !t.ToolBars.Contains(toolbar!));
 
             // Simulate the drag: reparent to the bottom tray and back.
-            trays[0].ToolBars.Remove(toolbar!);
-            trays[1].ToolBars.Add(toolbar!);
+            top.ToolBars.Remove(toolbar!);
+            bottom.ToolBars.Add(toolbar!);
             window.UpdateLayout();
-            trays[1].ToolBars.ShouldContain(toolbar!);
-            trays[0].ToolBars.ShouldNotContain(toolbar!);
+            bottom.ToolBars.ShouldContain(toolbar!);
+            top.ToolBars.ShouldNotContain(toolbar!);
         }
         finally
         {

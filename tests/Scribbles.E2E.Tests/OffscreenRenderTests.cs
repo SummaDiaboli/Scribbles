@@ -243,6 +243,24 @@ public sealed class OffscreenRenderTests
     }
 
     [Fact]
+    public void ContainerPanels_KeepSubtleRounding()
+    {
+        // The M5 shell rework flattened everything; the hybrid look keeps
+        // flat docking but rounds the top tray and the sidebar panel.
+        string dir = Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "Scribbles.App");
+        string xaml = File.ReadAllText(Path.GetFullPath(Path.Combine(dir, "MainWindow.xaml")));
+        int trayAt = xaml.IndexOf("<ToolBarTray", StringComparison.Ordinal);
+        trayAt.ShouldBeGreaterThan(-1, "top toolbar tray should exist");
+        string wrapper = xaml.Substring(Math.Max(0, trayAt - 300), Math.Min(300, trayAt));
+        wrapper.Contains("CornerRadius=").ShouldBeTrue("top tray needs a rounded wrapper");
+        int sideAt = xaml.IndexOf("x:Name=\"Sidebar\"", StringComparison.Ordinal);
+        sideAt.ShouldBeGreaterThan(-1, "sidebar should exist");
+        int sideStart = xaml.LastIndexOf("<Border", sideAt, StringComparison.Ordinal);
+        string side = xaml.Substring(sideStart, sideAt - sideStart + 200);
+        side.Contains("CornerRadius=").ShouldBeTrue("sidebar panel needs rounding");
+    }
+
+    [Fact]
     public void IconToggle_Checked_ShowsAccentTint() => Sta(() =>
     {
         EnsureThemedApp("Dark");
