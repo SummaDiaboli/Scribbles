@@ -1426,6 +1426,25 @@ public partial class MainWindow : Window
         ScrollToPage(pageNumber);
     }
 
+    /// <summary>
+    /// Hover magnifier: composes ink onto a 600px preview (shown at 300px, so
+    /// text downscales sharp) instead of stretching the 168px thumb, which
+    /// upscaled text into mush. Fast enough (~15ms) to run on hover-open.
+    /// </summary>
+    private void Magnifier_Opened(object sender, RoutedEventArgs e)
+    {
+        if (sender is not System.Windows.Controls.ToolTip tip
+            || tip.DataContext is not PageViewModel vm
+            || vm.Image is null)
+            return;
+        if (tip.Content is not System.Windows.Controls.StackPanel panel
+            || panel.Children.Count == 0
+            || panel.Children[0] is not System.Windows.Controls.Image img)
+            return;
+        img.Source = InkThumbnailComposer.Compose(
+            vm.Image, vm.WidthPt, vm.HeightPt, _session.CollectStrokes(vm), thumbWidth: 600);
+    }
+
     /// <summary>Uniform page stride: rendered height × zoom + card margins.</summary>
     private double PageStride()
     {

@@ -192,7 +192,8 @@
                                         <Border.ToolTip>
                                             <ToolTip Background="{DynamicResource AppSurface}" BorderBrush="{DynamicResource AppBorder}"
                                                      ToolTipService.InitialShowDelay="400" ToolTipService.ShowDuration="2000"
-                                                     ToolTipService.BetweenShowDelay="100">
+                                                     ToolTipService.BetweenShowDelay="100"
+                                                     Opened="Magnifier_Opened">
                                                 <StackPanel>
                                                     <Image Width="300" Stretch="Uniform">
                                                         <Image.Source>

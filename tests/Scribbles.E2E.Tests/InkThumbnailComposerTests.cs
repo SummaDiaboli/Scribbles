@@ -58,4 +58,15 @@ public sealed class InkThumbnailComposerTests
             WhiteRaster(), 612, 792, Array.Empty<InkStroke>());
         CountNear(thumb, 255, 0, 0, 60).ShouldBe(0);
     });
+
+    [Fact]
+    public void Compose_MagnifierWidth_RendersNear600() => Sta(() =>
+    {
+        // The hover preview shows at 300px: composing at 600 means text
+        // downscales (sharp) instead of stretching the 168px thumb (mush).
+        var preview = InkThumbnailComposer.Compose(
+            WhiteRaster(), 612, 792, Array.Empty<InkStroke>(), thumbWidth: 600);
+        preview.PixelWidth.ShouldBe(600);
+        preview.PixelHeight.ShouldBeGreaterThan(700);
+    });
 }
