@@ -177,6 +177,7 @@ public partial class MainWindow : Window
         ToggleTextOverlays();
         UpdateUndoRedoState();
         RefreshRecentMenu();
+        RefreshRecoverMenu();
         CheckForAutosave();
     }
 
@@ -795,21 +796,22 @@ public partial class MainWindow : Window
     {
         if (sender is not Canvas overlay || overlay.DataContext is not PageViewModel page)
             return;
-        // Native editing parked (2026-10-08): selection + copy only for now.
-        // if (_pen.Tool == PenTool.TextEdit)
-        // {
-        //     _marqueeStartDip = e.GetPosition(overlay);
-        //     overlay.CaptureMouse();
-        //     overlay.Focus();
-        //     e.Handled = true;
-        //     return;
-        // }
-        // if (e.ClickCount == 2)
-        // {
-        //     TryStartNativeEdit(overlay, page);
-        //     e.Handled = true;
-        //     return;
-        // }
+        // Native editing: TextEdit tool drags do nothing (clicks edit);
+        // double-click opens the line editor; other tools select + copy.
+        if (_pen.Tool == PenTool.TextEdit)
+        {
+            _marqueeStartDip = e.GetPosition(overlay);
+            overlay.CaptureMouse();
+            overlay.Focus();
+            e.Handled = true;
+            return;
+        }
+        if (e.ClickCount == 2)
+        {
+            TryStartNativeEdit(overlay, page);
+            e.Handled = true;
+            return;
+        }
         // Fresh drag: clear this page's selection. The anchor is the word under
         // the cursor (browser behavior — no selection box).
         _textSelections.Remove(page.Number);
@@ -851,14 +853,14 @@ public partial class MainWindow : Window
         _marqueeStartDip = null;
         _readingLines = null;
 
-        // Edit tool parked (2026-10-08).
-        // if (_pen.Tool == PenTool.TextEdit)
-        // {
-        //     if (Math.Abs(end.X - start.X) < 5 && Math.Abs(end.Y - start.Y) < 5
-        //         && overlay.DataContext is PageViewModel editPage)
-        //         TryStartLineEdit(overlay, editPage, end);
-        //     return;
-        // }
+        // Edit tool: click (no drag) opens the line editor.
+        if (_pen.Tool == PenTool.TextEdit)
+        {
+            if (Math.Abs(end.X - start.X) < 5 && Math.Abs(end.Y - start.Y) < 5
+                && overlay.DataContext is PageViewModel editPage)
+                TryStartLineEdit(overlay, editPage, end);
+            return;
+        }
 
         // Treat a plain click as "clear selection".
         if (Math.Abs(end.X - start.X) < 3 && Math.Abs(end.Y - start.Y) < 3)
@@ -1266,6 +1268,7 @@ public partial class MainWindow : Window
                 _settings = _settings with { RecentFiles = Core.RecentFiles.Add(_settings.RecentFiles, saved) };
                 PersistSettings();
                 RefreshRecentMenu();
+                _autosave.Delete(AutosaveService.KeyFor(saved)); // snapshot now equals the file
             }
         }
         catch (Exception ex)
@@ -1310,6 +1313,51 @@ public partial class MainWindow : Window
 
     private void RecentMenu_Opened(object sender, RoutedEventArgs e) => RefreshRecentMenu();
 
+    private void RecoverMenu_Opened(object sender, RoutedEventArgs e) => RefreshRecoverMenu();
+
+    /// <summary>
+    /// Populated eagerly too (like recents): a childless menu item never
+    /// opens its submenu. Refreshed on open since snapshots come and go.
+    /// </summary>
+    private void RefreshRecoverMenu()
+    {
+        RecoverMenuItem.Items.Clear();
+        var snapshots = _autosave.ListSnapshots();
+        if (snapshots.Count == 0)
+        {
+            RecoverMenuItem.Items.Add(new MenuItem { Header = "(no autosaves)", IsEnabled = false });
+            return;
+        }
+        foreach (var snapshot in snapshots.Take(10))
+        {
+            string name = snapshot.SourcePath is null
+                ? Path.GetFileName(snapshot.PdfPath)
+                : Path.GetFileName(snapshot.SourcePath);
+            var item = new MenuItem { Header = $"{name} ({snapshot.SavedUtc:g})" };
+            string pdfPath = snapshot.PdfPath;
+            string? sourcePath = snapshot.SourcePath;
+            item.Click += (_, _) => RecoverSnapshot(pdfPath, sourcePath);
+            RecoverMenuItem.Items.Add(item);
+        }
+    }
+
+    private void RecoverSnapshot(string pdfPath, string? sourcePath)
+    {
+        try
+        {
+            _ = OpenSafelyAsync(pdfPath);
+            if (!string.IsNullOrEmpty(sourcePath) && File.Exists(sourcePath))
+            {
+                _session.RetargetCurrentPath(sourcePath); // keep saving to the real file
+                _vm.Status += " (recovered from autosave)";
+            }
+        }
+        catch (Exception ex)
+        {
+            _vm.Status = $"Recover failed: {ex.Message}";
+        }
+    }
+
     /// <summary>
     /// Populated eagerly (not only when opened): a childless menu item never
     /// opens its submenu, which made Recent look like a dead button.
@@ -1352,29 +1400,6 @@ public partial class MainWindow : Window
         var latest = _autosave.LatestInfoPath();
         if (latest is not null)
             _vm.Status = $"Autosave found ({new FileInfo(latest).LastWriteTime:g}). Use File → Recover autosave to restore it. Pen draws, touch scrolls.";
-    }
-
-    private void Recover_Click(object sender, RoutedEventArgs e)
-    {
-        try
-        {
-            var found = _autosave.ReadLatest();
-            if (found is null)
-            {
-                _vm.Status = "No autosaves found.";
-                return;
-            }
-            _ = OpenSafelyAsync(found.Value.PdfPath);
-            if (!string.IsNullOrEmpty(found.Value.SourcePath) && File.Exists(found.Value.SourcePath))
-            {
-                _session.RetargetCurrentPath(found.Value.SourcePath); // keep saving to the real file
-                _vm.Status += " (recovered from autosave)";
-            }
-        }
-        catch (Exception ex)
-        {
-            _vm.Status = $"Recover failed: {ex.Message}";
-        }
     }
 
     // ---------- pinch zoom (two-finger touch) ----------

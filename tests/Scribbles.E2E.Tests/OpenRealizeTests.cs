@@ -116,8 +116,7 @@ public sealed class OpenRealizeTests
     });
 
     [Fact]
-    public void SaveAs_ReturnsNewPath_AndLeavesOriginalUntouched() => Sta(async () =>
-    {
+    public void SaveAs_ReturnsNewPath_AndLeavesOriginalUntouched() => Sta(async () => {
         EnsureThemedApp("Light");
         var store = new ScribblesPdfStore();
         string original = WritePdf(store.Save(BasePdf(),
@@ -149,6 +148,57 @@ public sealed class OpenRealizeTests
             File.Delete(original);
             if (File.Exists(target))
                 File.Delete(target);
+        }
+    });
+
+    private static string SharpRejectingFixture()
+    {
+        // A PDF PdfPig/Docnet read but PdfSharp refuses: LF fixture bytes with
+        // CR inserted before every LF. The shifted xref offsets are exactly
+        // the kind of damage lenient readers exist for (seen live: Pig reads
+        // on, Sharp throws 'PdfTrailer'). Constructed in-test so no checkout
+        // filter can ever change it.
+        // E2E builds into net8.0-windows10.0.19041.
+        string dir = Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "fixtures");
+        string path = Path.GetFullPath(Path.Combine(dir, "sample-text.pdf"));
+        byte[] lf = File.ReadAllBytes(path);
+        var mangled = new List<byte>(lf.Length + 64);
+        foreach (byte b in lf)
+        {
+            if (b == 10)
+                mangled.Add(13);
+            mangled.Add(b);
+        }
+        return WritePdf(mangled.ToArray());
+    }
+
+    [Fact]
+    public void Open_SharpRejectingPdf_OpensDegraded_WithoutLosingTheSession() => Sta(async () =>
+    {
+        EnsureThemedApp("Light");
+        var store = new ScribblesPdfStore();
+        string copy = SharpRejectingFixture();
+        var converter = new InkModelConverter();
+        var inks = new List<InkCanvas>();
+        var vm = new MainViewModel(Scribbles.App.App.Themes);
+        var session = new DocumentSession(
+            store, converter, new StrokeHistory(converter, BoxesOf(vm)), new PenToolbarController(),
+            () => inks, SetBoxesOf(vm));
+        try
+        {
+            await session.OpenDocumentAsync(copy, vm);
+            vm.Pages.Count.ShouldBe(1, "degraded open still shows pages");
+            session.IsDegraded.ShouldBeTrue("Sharp-rejecting file must flag degraded mode");
+            vm.Status.Contains("session only").ShouldBeTrue("status must explain the limitation");
+
+            string? saved = await session.SaveAsync(vm, null, () => copy + ".out.pdf", saveAs: true);
+            saved.ShouldBeNull("degraded save must refuse, not throw or overwrite");
+            File.Exists(copy + ".out.pdf").ShouldBeFalse("refused save must not write");
+            vm.Status.Contains("unreadable").ShouldBeTrue("refusal must name the cause");
+        }
+        finally
+        {
+            File.Delete(copy);
         }
     });
 }

@@ -96,7 +96,7 @@ internal sealed class DocumentSession
     /// <summary>Re-renders one page's image and words after a true text edit.</summary>
     public async Task RefreshPageAsync(MainViewModel vm, int pageNumber)
     {
-        if (CurrentBytes is null)
+        if (CurrentBytes is null || IsDegraded)
             return;
         var page = vm.Pages.FirstOrDefault(p => p.Number == pageNumber);
         if (page is null)
@@ -260,16 +260,30 @@ internal sealed class DocumentSession
     }
 
     /// <summary>
+    /// True when PdfSharp refused the file: pages still open (PdfPig sizes /
+    /// words, PDFium rasters) and ink works in memory, but embedding ink back
+    /// into the PDF is impossible — saving and exporting stay disabled.
+    /// </summary>
+    public bool IsDegraded { get; private set; }
+
+    /// <summary>
     /// Async open: file read + PdfSharp parse + PdfPig sizes/words run on pool
     /// threads; stash seeding touches view-models back on the UI thread.
+    /// A PdfSharp refusal degrades (view + session ink) instead of failing.
     /// </summary>
     public async Task OpenDocumentAsync(string path, MainViewModel vm)
     {
-        var (bytes, loaded) = await Task.Run(() =>
+        IsDegraded = false;
+        byte[] bytes = await Task.Run(() => File.ReadAllBytes(path)).ConfigureAwait(true);
+        LoadedPdf? loaded = null;
+        try
         {
-            byte[] raw = File.ReadAllBytes(path);
-            return (raw, _store.Load(raw));
-        }).ConfigureAwait(true);
+            loaded = await Task.Run(() => _store.Load(bytes)).ConfigureAwait(true);
+        }
+        catch
+        {
+            IsDegraded = true;
+        }
 
         await vm.LoadPdfAsync(path, bytes).ConfigureAwait(true);
         _converter.Clear();
@@ -282,7 +296,11 @@ internal sealed class DocumentSession
         // Seed the stash in model form; SyncContainers converts for canvases
         // as they realize (containers materialize asynchronously).
         _copyMeta.Clear();
-        if (loaded is { HashesMatch: true, Model: not null })
+        if (IsDegraded || loaded is null)
+        {
+            vm.Status = $"{vm.Pages.Count} page(s). This PDF's structure is unreadable — ink stays for this session only (saving disabled).";
+        }
+        else if (loaded is { HashesMatch: true, Model: not null })
         {
             foreach (var page in loaded.Model.Pages)
             {
@@ -326,6 +344,11 @@ internal sealed class DocumentSession
             vm.Status = "Nothing to export — open a PDF first.";
             return;
         }
+        if (IsDegraded)
+        {
+            vm.Status = "Can't export this PDF — its structure is unreadable.";
+            return;
+        }
         var model = CollectModel(vm.Pages);
         if (enrichAsync is not null)
             model = await enrichAsync(model);
@@ -356,6 +379,11 @@ internal sealed class DocumentSession
         if (CurrentBytes is null)
         {
             vm.Status = "Nothing to save — open a PDF first.";
+            return null;
+        }
+        if (IsDegraded)
+        {
+            vm.Status = "Can't save ink into this PDF — its structure is unreadable. Ink stays for this session only.";
             return null;
         }
         if (!saveAs)
@@ -441,7 +469,7 @@ internal sealed class DocumentSession
 
     public async Task<byte[]> SaveWorkingCopyAsync(MainViewModel vm, AutosaveService autosave)
     {
-        if (CurrentBytes is null)
+        if (CurrentBytes is null || IsDegraded)
             return Array.Empty<byte>();
         var model = CollectModel(vm.Pages);
         byte[] current = CurrentBytes;
@@ -462,6 +490,11 @@ internal sealed class DocumentSession
         if (CurrentBytes is null)
         {
             vm.Status = "Open a document first.";
+            return;
+        }
+        if (IsDegraded)
+        {
+            vm.Status = "Can't add pages to this PDF — its structure is unreadable.";
             return;
         }
         var last = vm.Pages.LastOrDefault();

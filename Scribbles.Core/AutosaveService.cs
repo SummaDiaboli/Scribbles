@@ -8,6 +8,12 @@ public sealed class AutosaveService
 {
     public string Directory { get; }
 
+    /// <summary>Retention caps: newest copies kept, older-than-this dropped.</summary>
+    public const int MaxCopies = 10;
+    public static readonly TimeSpan MaxAge = TimeSpan.FromDays(30);
+
+    public sealed record AutosaveSnapshot(string PdfPath, string? SourcePath, DateTime SavedUtc);
+
     public static string DefaultDirectory => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Scribbles", "working");
 
@@ -27,6 +33,66 @@ public sealed class AutosaveService
         string pdfPath = PdfPathFor(key);
         File.WriteAllBytes(pdfPath, pdfBytes);
         File.WriteAllText(pdfPath + ".info", $"{sourcePath}\n{DateTime.UtcNow:o}");
+        Prune();
+    }
+
+    /// <summary>Forgets one working copy (e.g. after a successful save).</summary>
+    public void Delete(string key)
+    {
+        try
+        {
+            File.Delete(PdfPathFor(key));
+            File.Delete(PdfPathFor(key) + ".info");
+        }
+        catch
+        {
+            // Hygiene must never break saving.
+        }
+    }
+
+    /// <summary>Enforces the retention caps (newest kept, stale dropped).</summary>
+    public void Prune()
+    {
+        List<AutosaveSnapshot> snapshots;
+        try
+        {
+            snapshots = ListSnapshots().ToList();
+        }
+        catch
+        {
+            return;
+        }
+        DateTime cutoff = DateTime.UtcNow - MaxAge;
+        for (int i = 0; i < snapshots.Count; i++)
+        {
+            if (i >= MaxCopies || snapshots[i].SavedUtc < cutoff)
+                Delete(KeyFromPdfPath(snapshots[i].PdfPath));
+        }
+    }
+
+    private static string KeyFromPdfPath(string pdfPath) =>
+        Path.GetFileNameWithoutExtension(pdfPath);
+
+    /// <summary>All restorable snapshots, newest first.</summary>
+    public IReadOnlyList<AutosaveSnapshot> ListSnapshots()
+    {
+        if (!System.IO.Directory.Exists(Directory))
+            return Array.Empty<AutosaveSnapshot>();
+        return System.IO.Directory.GetFiles(Directory, "*.pdf")
+            .Where(f => !f.EndsWith(".info", StringComparison.OrdinalIgnoreCase))
+            .Select(pdfPath => (PdfPath: pdfPath, Info: pdfPath + ".info"))
+            .Where(t => File.Exists(t.Info))
+            .Select(t =>
+            {
+                string[] lines = File.ReadAllLines(t.Info);
+                string? source = lines.Length > 0 ? lines[0].Trim() : null;
+                if (string.IsNullOrEmpty(source))
+                    source = null;
+                // File mtime is the stamp (single source of truth).
+                return new AutosaveSnapshot(t.PdfPath, source, File.GetLastWriteTimeUtc(t.Info));
+            })
+            .OrderByDescending(s => s.SavedUtc)
+            .ToList();
     }
 
     public string? LatestInfoPath()

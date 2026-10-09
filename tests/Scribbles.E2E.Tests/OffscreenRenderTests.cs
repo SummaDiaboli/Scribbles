@@ -284,6 +284,25 @@ public sealed class OffscreenRenderTests
         menu.Contains("CardMenu_Delete").ShouldBeTrue("menu needs Delete");
     }
 
+    [Fact]
+    public void TextEditTool_IsUnparked()
+    {
+        // The native-edit entry points were parked behind comments; this locks
+        // the unpark: live tool button plus live (uncommented) call sites.
+        string dir = Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "Scribbles.App");
+        string xaml = File.ReadAllText(Path.GetFullPath(Path.Combine(dir, "MainWindow.xaml")));
+        xaml.Contains("Tag=\"TextEdit\"").ShouldBeTrue("TextEdit tool button must exist");
+        int buttonAt = xaml.IndexOf("Tag=\"TextEdit\"", StringComparison.Ordinal);
+        string openComment = "<!--";
+        int commentAt = xaml.LastIndexOf(openComment, buttonAt, StringComparison.Ordinal);
+        bool insideComment = commentAt >= 0
+            && !xaml.Substring(commentAt, buttonAt - commentAt).Contains("-->");
+        insideComment.ShouldBeFalse("TextEdit button must not sit inside a comment");
+        string cs = File.ReadAllText(Path.GetFullPath(Path.Combine(dir, "MainWindow.xaml.cs")));
+        cs.Contains("TryStartLineEdit(overlay, editPage, end);").ShouldBeTrue("click-to-edit call must be live");
+        cs.Contains("//         TryStartLineEdit(overlay, editPage, end);").ShouldBeFalse("click-to-edit call must not be commented");
+    }
+
     private static string ThemeResourceKey(Style style, DependencyProperty property)
     {
         var setter = style.Setters.OfType<Setter>()

@@ -25,7 +25,7 @@
                 <MenuItem Header="Save _As…" Click="SaveAs_Click"/>
                 <MenuItem Header="Export _flattened copy…" Click="Export_Click"/>
                 <Separator/>
-                <MenuItem Header="_Recover autosave…" Click="Recover_Click"/>
+                <MenuItem x:Name="RecoverMenuItem" Header="_Recover autosave" SubmenuOpened="RecoverMenu_Opened"/>
                 <Separator/>
                 <MenuItem Header="Add _blank page" Click="AddPage_Click"/>
                 <Separator/>
@@ -93,11 +93,9 @@
                     <RadioButton GroupName="PenTools" ToolTip="Text select — drag over PDF text to copy" Style="{StaticResource IconToggle}" Click="Tool_Click" Tag="TextSelect">
                         <Image Source="{StaticResource IconType}" Width="18" Height="18"/>
                     </RadioButton>
-                    <!-- TextEdit parked (2026-10-08): native editing needs a rethink.
                     <RadioButton GroupName="PenTools" ToolTip="Edit text — click a line to type" Style="{StaticResource IconToggle}" Click="Tool_Click" Tag="TextEdit">
                         <Image Source="{StaticResource IconTextEdit}" Width="18" Height="18"/>
                     </RadioButton>
-                    -->
                     <Separator/>
                     <Button ToolTip="Convert lasso selection to text" Style="{StaticResource IconButton}" Click="Convert_Click">
                         <Image Source="{StaticResource IconScanText}" Width="18" Height="18"/>
