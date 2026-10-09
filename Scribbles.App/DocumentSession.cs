@@ -54,7 +54,29 @@ internal sealed class DocumentSession
         _setBoxes = setBoxes;
     }
 
-    public void MarkDirty()
+    /// <summary>1-based pages changed since the last save (empty = clean).</summary>
+    public IReadOnlySet<int> DirtyPages => _dirtyPages;
+    private readonly HashSet<int> _dirtyPages = new();
+
+    /// <summary>Monotonic content version per page (thumbnails recompose only on change).</summary>
+    public long Revision(int page) => _revisions.TryGetValue(page, out long r) ? r : 0;
+    private readonly Dictionary<int, long> _revisions = new();
+
+    public void MarkDirty(int page)
+    {
+        _dirtyPages.Add(page);
+        _revisions[page] = Revision(page) + 1;
+        MarkDirtyCore();
+    }
+
+    public void MarkDirty(IEnumerable<int> pages)
+    {
+        foreach (int page in pages)
+            _dirtyPages.Add(page);
+        MarkDirtyCore();
+    }
+
+    private void MarkDirtyCore()
     {
         IsDirty = true;
         StateChanged?.Invoke(this, EventArgs.Empty);
@@ -65,9 +87,13 @@ internal sealed class DocumentSession
 
     public void MarkCopyable(IEnumerable<(int Page, Stroke Stroke, string Id)> strokes, string text)
     {
-        foreach (var (_, _, id) in strokes)
+        var touched = new HashSet<int>();
+        foreach (var (page, _, id) in strokes)
+        {
             _copyMeta[id] = (InkHandleMode.Copyable, text);
-        MarkDirty();
+            touched.Add(page);
+        }
+        MarkDirty(touched);
     }
 
     private (InkHandleMode Mode, string Text) MetaFor(string id) =>
@@ -87,10 +113,10 @@ internal sealed class DocumentSession
     public void RetargetCurrentPath(string path) => CurrentPath = path;
 
     /// <summary>Swaps the base bytes (used after true text-layer edits).</summary>
-    public void ReplaceBaseBytes(byte[] bytes)
+    public void ReplaceBaseBytes(byte[] bytes, int page)
     {
         CurrentBytes = bytes;
-        MarkDirty();
+        MarkDirty(page);
     }
 
     /// <summary>Re-renders one page's image and words after a true text edit.</summary>
@@ -203,8 +229,9 @@ internal sealed class DocumentSession
         {
             if (!ReferenceEquals(ink.Strokes, strokes))
                 continue;
-            _history.TrackChange(CanvasExplorer.GetPageNumber(ink), strokes, added, removed);
-            MarkDirty();
+            int page = CanvasExplorer.GetPageNumber(ink);
+            _history.TrackChange(page, strokes, added, removed);
+            MarkDirty(page);
             break;
         }
     }
@@ -289,6 +316,8 @@ internal sealed class DocumentSession
         _converter.Clear();
         _history.Clear();
         _stash.Clear();
+        _dirtyPages.Clear();
+        _revisions.Clear();
         _factors.Clear();
         foreach (var page in vm.Pages)
             _factors[page.Number] = (page.DipPerPtX, page.DipPerPtY);
@@ -394,18 +423,25 @@ internal sealed class DocumentSession
             if (path is null)
                 return null;
         }
+        if (!IsDirty && !saveAs)
+        {
+            vm.Status = "No changes to save.";
+            return null;
+        }
         var model = CollectModel(vm.Pages);
         byte[] current = CurrentBytes;
         string target = path;
+        // Snapshot: strokes drawn during the background save stay dirty.
+        IReadOnlySet<int>? dirty = _dirtyPages.Count == 0 ? null : _dirtyPages.ToHashSet();
         byte[] saved = await Task.Run(() =>
         {
-            byte[] bytes = _store.Save(current, model);
+            byte[] bytes = _store.Save(current, model, dirty);
             File.WriteAllBytes(target, bytes);
             return bytes;
         }).ConfigureAwait(true);
         CurrentPath = target;
         CurrentBytes = saved;
-        SetClean();
+        SetClean(dirty);
         vm.Status = $"Saved {Path.GetFileName(target)}.";
         return target;
     }
@@ -432,7 +468,7 @@ internal sealed class DocumentSession
         {
             _history.Suspended = false;
         }
-        MarkDirty();
+        MarkDirty(page);
     }
 
     public void Undo(IEnumerable<int> pages)
@@ -463,7 +499,7 @@ internal sealed class DocumentSession
                 ink.Strokes.Remove(s);
                 _converter.Forget(s);
             }
-            MarkDirty();
+            MarkDirty(page);
         }
     }
 
@@ -474,13 +510,14 @@ internal sealed class DocumentSession
         var model = CollectModel(vm.Pages);
         byte[] current = CurrentBytes;
         string? source = CurrentPath;
+        IReadOnlySet<int>? dirty = _dirtyPages.Count == 0 ? null : _dirtyPages.ToHashSet();
         byte[] saved = await Task.Run(() =>
         {
-            byte[] bytes = _store.Save(current, model);
+            byte[] bytes = _store.Save(current, model, dirty);
             autosave.Save(AutosaveService.KeyFor(source), bytes, source);
             return bytes;
         }).ConfigureAwait(true);
-        SetClean();
+        SetClean(dirty);
         return saved;
     }
 
@@ -504,7 +541,8 @@ internal sealed class DocumentSession
             return;
         }
         CurrentBytes = NotebookDocuments.AddBlankPage(CurrentBytes, last.WidthPt, last.HeightPt);
-        MarkDirty();
+        int newNumber = vm.Pages.Count + 1;
+        MarkDirty(newNumber);
         var rendered = await new DocnetPdfRenderer().RenderSinglePageAsync(CurrentBytes, vm.Pages.Count + 1).ConfigureAwait(true);
         vm.Pages.Add(new PageViewModel
         {
@@ -520,9 +558,13 @@ internal sealed class DocumentSession
         vm.Status = $"Page {vm.Pages.Count} added.";
     }
 
-    private void SetClean()
+    private void SetClean(IReadOnlySet<int>? savedPages = null)
     {
-        IsDirty = false;
+        if (savedPages is null)
+            _dirtyPages.Clear();
+        else
+            _dirtyPages.ExceptWith(savedPages);
+        IsDirty = _dirtyPages.Count > 0;
         StateChanged?.Invoke(this, EventArgs.Empty);
     }
 }

@@ -116,8 +116,7 @@ public sealed class OpenRealizeTests
     });
 
     [Fact]
-    public void SaveAs_ReturnsNewPath_AndLeavesOriginalUntouched() => Sta(async () => {
-        EnsureThemedApp("Light");
+    public void SaveAs_ReturnsNewPath_AndLeavesOriginalUntouched() => Sta(async () => {        EnsureThemedApp("Light");
         var store = new ScribblesPdfStore();
         string original = WritePdf(store.Save(BasePdf(),
             new NoteDocument("", Array.Empty<NotePage>())));
@@ -199,6 +198,71 @@ public sealed class OpenRealizeTests
         finally
         {
             File.Delete(copy);
+        }
+    });
+
+    [Fact]
+    public void Save_WhenClean_SkipsRewrite() => Sta(async () => {
+        EnsureThemedApp("Light");
+        var store = new ScribblesPdfStore();
+        string path = WritePdf(store.Save(BasePdf(),
+            new NoteDocument("", Array.Empty<NotePage>())));
+        byte[] before = File.ReadAllBytes(path);
+
+        var converter = new InkModelConverter();
+        var inks = new List<InkCanvas>();
+        var vm = new MainViewModel(Scribbles.App.App.Themes);
+        var session = new DocumentSession(
+            store, converter, new StrokeHistory(converter, BoxesOf(vm)), new PenToolbarController(),
+            () => inks, SetBoxesOf(vm));
+        try
+        {
+            await session.OpenDocumentAsync(path, vm);
+            session.IsDirty.ShouldBeFalse("fresh open is clean");
+            string? saved = await session.SaveAsync(vm, null, () => null, saveAs: false);
+            saved.ShouldBeNull("clean save reports nothing to record");
+            File.ReadAllBytes(path).ShouldBe(before, "clean save must not rewrite the file");
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    });
+
+    [Fact]
+    public void DirtyPages_TrackedPerPage_AndClearedOnSave() => Sta(async () =>
+    {
+        EnsureThemedApp("Light");
+        var store = new ScribblesPdfStore();
+        string path = WritePdf(store.Save(BasePdf(),
+            new NoteDocument("", Array.Empty<NotePage>())));
+
+        var converter = new InkModelConverter();
+        var inks = new List<InkCanvas>();
+        var vm = new MainViewModel(Scribbles.App.App.Themes);
+        var session = new DocumentSession(
+            store, converter, new StrokeHistory(converter, BoxesOf(vm)), new PenToolbarController(),
+            () => inks, SetBoxesOf(vm));
+        string target = Path.Combine(Path.GetTempPath(), Guid.NewGuid() + ".pdf");
+        try
+        {
+            await session.OpenDocumentAsync(path, vm);
+            session.DirtyPages.ShouldBeEmpty("fresh open tracks nothing");
+            session.Revision(1).ShouldBe(0);
+            session.MarkDirty(2);
+            session.MarkDirty(2);
+            session.DirtyPages.ShouldBe(new HashSet<int> { 2 }, "pages tracked once each");
+            session.Revision(2).ShouldBe(2, "every mutation bumps the page revision");
+            session.IsDirty.ShouldBeTrue();
+            await session.SaveAsync(vm, null, () => target, saveAs: true);
+            session.DirtyPages.ShouldBeEmpty("save clears the pages it wrote");
+            session.IsDirty.ShouldBeFalse();
+        }
+        finally
+        {
+            File.Delete(path);
+            if (File.Exists(target))
+                File.Delete(target);
         }
     });
 }

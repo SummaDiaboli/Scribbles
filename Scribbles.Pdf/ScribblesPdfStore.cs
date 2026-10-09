@@ -25,7 +25,10 @@ public sealed record LoadedPdf(
 /// </summary>
 public sealed class ScribblesPdfStore
 {
-    public byte[] Save(byte[] originalPdfBytes, NoteDocument model)
+    /// <param name="dirtyPages">1-based pages to rebuild annotations for;
+    /// null rebuilds all (full save). Clean pages keep their on-disk
+    /// annotations, which already match the model from the last save.</param>
+    public byte[] Save(byte[] originalPdfBytes, NoteDocument model, IReadOnlySet<int>? dirtyPages = null)
     {
         using var stream = new MemoryStream(originalPdfBytes);
         using var doc = PdfSharp.Pdf.IO.PdfReader.Open(stream, PdfDocumentOpenMode.Modify);
@@ -37,13 +40,24 @@ public sealed class ScribblesPdfStore
 
         for (int i = 0; i < doc.PageCount; i++)
         {
+            if (dirtyPages is not null && !dirtyPages.Contains(i + 1))
+                continue;
             var page = doc.Pages[i];
             InkAnnotationMapper.RemoveOwnAnnotations(page);
             var strokes = stamped.Pages.FirstOrDefault(p => p.Number == i + 1)?.Strokes
                 ?? Array.Empty<InkStroke>();
             foreach (var stroke in strokes)
                 InkAnnotationMapper.Add(doc, page, stroke, pages[i].HeightPt);
-            PieceInfoStore.Write(page, json, hashes);
+        }
+
+        if (doc.PageCount > 0)
+        {
+            // Model JSON lives on page 1 only (TryRead reads page 1 only):
+            // per-page copies were never read and multiplied file size by N.
+            PieceInfoStore.Write(doc.Pages[0], json, hashes);
+            // Drop stale copies from older saves on the other pages.
+            for (int i = 1; i < doc.PageCount; i++)
+                RemoveOwnPieceInfo(doc.Pages[i]);
         }
 
         using var outStream = new MemoryStream();
@@ -62,59 +76,80 @@ public sealed class ScribblesPdfStore
         using var doc = PdfReader.Open(stream, PdfDocumentOpenMode.Modify);
         var pages = ReadPages(doc);
 
+        // Serial DOM prep (PdfSharp objects are not thread-safe).
+        var models = new NotePage?[doc.PageCount];
+        var heights = new double[doc.PageCount];
         for (int i = 0; i < doc.PageCount; i++)
         {
             var page = doc.Pages[i];
-            double pageHeight = pages[i].HeightPt;
+            heights[i] = pages[i].HeightPt;
             InkAnnotationMapper.RemoveOwnAnnotations(page);
             RemoveOwnPieceInfo(page);
+            models[i] = model.Pages.FirstOrDefault(p => p.Number == i + 1);
+        }
 
-            var pageModel = model.Pages.FirstOrDefault(p => p.Number == i + 1);
-            if (pageModel is null)
-                continue;
-            var sb = new System.Text.StringBuilder();
+        // Chunk building is pure CPU per page (no shared state) → parallel.
+        // The array preserves page order, so output bytes are deterministic.
+        var chunks = new string?[doc.PageCount];
+        Parallel.For(0, doc.PageCount, i =>
+        {
+            if (models[i] is not null)
+                chunks[i] = BuildFlatChunk(models[i]!, heights[i]);
+        });
 
-            foreach (var stroke in pageModel.Strokes)
+        // Serial DOM write-back.
+        for (int i = 0; i < doc.PageCount; i++)
+        {
+            if (!string.IsNullOrEmpty(chunks[i]))
             {
-                if (stroke.Points.Count == 0)
-                    continue;
-                var (a, r, g, b) = InkUnits.FromArgb(stroke.ColorArgb);
-                double alpha = stroke.Tool == ToolKind.Highlighter ? 0.5 : 1.0;
-                sb.Append(PdfContentBuilder.FlattenStroke(
-                    stroke.Points, pageHeight, Math.Max(0.5, stroke.WidthPt),
-                    r / 255.0 * alpha + (1 - alpha), // highlighter washes toward white
-                    g / 255.0 * alpha + (1 - alpha),
-                    b / 255.0 * alpha + (1 - alpha)));
-                if (stroke.Mode == InkHandleMode.Copyable && !string.IsNullOrWhiteSpace(stroke.RecognizedText))
-                {
-                    var (minX, minY, _, maxY) = stroke.Bounds();
-                    double size = Math.Clamp((maxY - minY) / 2.0, 8, 24);
-                    sb.Append(PdfContentBuilder.InvisibleText(
-                        stroke.RecognizedText, minX, minY, size, pageHeight));
-                }
-            }
-
-            foreach (var box in pageModel.TextBoxes)
-            {
-                if (box.Kind == TextBoxKind.EditedNative)
-                    sb.Append(PdfContentBuilder.CoverRect(box.X, box.Y, box.Width, box.Height, pageHeight));
-                var (a, r, g, b) = InkUnits.FromArgb(box.ColorArgb);
-                sb.Append(PdfContentBuilder.VisibleText(
-                    box.Text, box.X, box.Y, Math.Max(6, box.FontSizePt), pageHeight,
-                    r / 255.0, g / 255.0, b / 255.0));
-            }
-
-            string chunk = sb.ToString();
-            if (chunk.Length > 0)
-            {
+                var page = doc.Pages[i];
                 EnsureCopyFont(page);
-                AppendContentStream(doc, page, System.Text.Encoding.ASCII.GetBytes(chunk));
+                AppendContentStream(doc, page, System.Text.Encoding.ASCII.GetBytes(chunks[i]!));
             }
         }
 
         using var outStream = new MemoryStream();
         doc.Save(outStream);
         return outStream.ToArray();
+    }
+
+    /// <summary>Pure per-page content builder (thread-safe): ink paths,
+    /// visible converted text, invisible copyable text.</summary>
+    private static string BuildFlatChunk(NotePage pageModel, double pageHeight)
+    {
+        var sb = new System.Text.StringBuilder();
+
+        foreach (var stroke in pageModel.Strokes)
+        {
+            if (stroke.Points.Count == 0)
+                continue;
+            var (a, r, g, b) = InkUnits.FromArgb(stroke.ColorArgb);
+            double alpha = stroke.Tool == ToolKind.Highlighter ? 0.5 : 1.0;
+            sb.Append(PdfContentBuilder.FlattenStroke(
+                stroke.Points, pageHeight, Math.Max(0.5, stroke.WidthPt),
+                r / 255.0 * alpha + (1 - alpha), // highlighter washes toward white
+                g / 255.0 * alpha + (1 - alpha),
+                b / 255.0 * alpha + (1 - alpha)));
+            if (stroke.Mode == InkHandleMode.Copyable && !string.IsNullOrWhiteSpace(stroke.RecognizedText))
+            {
+                var (minX, minY, _, maxY) = stroke.Bounds();
+                double size = Math.Clamp((maxY - minY) / 2.0, 8, 24);
+                sb.Append(PdfContentBuilder.InvisibleText(
+                    stroke.RecognizedText, minX, minY, size, pageHeight));
+            }
+        }
+
+        foreach (var box in pageModel.TextBoxes)
+        {
+            if (box.Kind == TextBoxKind.EditedNative)
+                sb.Append(PdfContentBuilder.CoverRect(box.X, box.Y, box.Width, box.Height, pageHeight));
+            var (a, r, g, b) = InkUnits.FromArgb(box.ColorArgb);
+            sb.Append(PdfContentBuilder.VisibleText(
+                box.Text, box.X, box.Y, Math.Max(6, box.FontSizePt), pageHeight,
+                r / 255.0, g / 255.0, b / 255.0));
+        }
+
+        return sb.ToString();
     }
 
     public LoadedPdf Load(byte[] pdfBytes)

@@ -13,6 +13,20 @@ public sealed class AppUpdater
 {
     public const string RepoUrl = "https://github.com/SummaDiaboli/Scribbles";
 
+    /// <summary>True only in a real Velopack install (never dev builds).</summary>
+    public static bool IsInstalled(string channel)
+    {
+        try
+        {
+            var (source, options) = ForChannel(channel);
+            return new UpdateManager(source, options).IsInstalled;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
     /// <summary>Stable tracks the default channel; beta opts into prereleases and downgrades.</summary>
     public static (IUpdateSource Source, UpdateOptions Options) ForChannel(string channel)
     {

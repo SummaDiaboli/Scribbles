@@ -25,7 +25,13 @@ public partial class App : Application
     private static void Main(string[] args)
     {
         // First, always: install/update/uninstall hooks run and exit here.
-        VelopackApp.Build().Run();
+        VelopackApp.Build()
+            .OnBeforeUninstallFastCallback(_ =>
+            {
+                if (Environment.ProcessPath is not null)
+                    FileAssociationEntries.Remove(Environment.ProcessPath);
+            })
+            .Run();
         var app = new App();
         app.InitializeComponent();
         app.Run();
@@ -66,6 +72,11 @@ public partial class App : Application
         {
             new HomeWindow().Show();
         }
+
+        // Open-With presence (never the default handler): installed app only,
+        // re-applied each launch so the path stays current across updates.
+        if (Environment.ProcessPath is not null && AppUpdater.IsInstalled(Settings.UpdateChannel))
+            FileAssociationEntries.Apply(Environment.ProcessPath);
 
         CheckForUpdatesInBackground();
     }

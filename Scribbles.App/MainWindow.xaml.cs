@@ -133,14 +133,20 @@ public partial class MainWindow : Window
     }
 
     /// <summary>Composites live ink onto every rendered page's sidebar thumb.</summary>
+    private readonly Dictionary<int, long> _composedRevisions = new();
+
     private void RefreshThumbnails()
     {
         foreach (var vm in _vm.Pages)
         {
             if (vm.Image is null)
                 continue;
+            long revision = _session.Revision(vm.Number);
+            if (_composedRevisions.TryGetValue(vm.Number, out long done) && done == revision)
+                continue; // unchanged since last compose (saves don't bump)
             vm.Thumbnail = InkThumbnailComposer.Compose(
                 vm.Image, vm.WidthPt, vm.HeightPt, _session.CollectStrokes(vm));
+            _composedRevisions[vm.Number] = revision;
         }
     }
 
@@ -165,6 +171,7 @@ public partial class MainWindow : Window
                     target.Image = image;
                     target.Thumbnail = InkThumbnailComposer.Compose(
                         image, target.WidthPt, target.HeightPt, _session.CollectStrokes(target));
+                    _composedRevisions[p] = _session.Revision(p);
                 }
             }));
         }
@@ -523,11 +530,13 @@ public partial class MainWindow : Window
             return;
         }
         int converted = 0;
+        var touched = new HashSet<int>();
         foreach (var pageGroup in selected.GroupBy(t => t.Page))
         {
             var vm = PageVm(pageGroup.Key);
             if (vm is null)
                 continue;
+            touched.Add(pageGroup.Key);
             var models = pageGroup.Select(t =>
             {
                 var v = PageVm(t.Page);
@@ -570,7 +579,7 @@ public partial class MainWindow : Window
                 converted++;
             }
         }
-        _session.MarkDirty();
+        _session.MarkDirty(touched);
         _vm.Status = converted > 0
             ? $"Converted {converted} line(s) to text — edit freely."
             : "Nothing converted.";
@@ -620,24 +629,6 @@ public partial class MainWindow : Window
     private int _nativePage;
     private SelectionRect _nativeBounds = new(0, 0, 0, 0);
     private string _nativeOldText = "";
-
-    private void TryStartNativeEdit(Canvas overlay, PageViewModel page)
-    {
-        DiscardNativeEditor(commit: false);
-        if (!_textSelections.TryGetValue(page.Number, out var selected) || selected.Words.Count == 0)
-        {
-            _vm.Status = "Select native text first (drag), then double-click to edit it.";
-            return;
-        }
-        double minX = selected.Words.Min(w => w.X);
-        double minY = selected.Words.Min(w => w.Y);
-        double maxX = selected.Words.Max(w => w.X + w.Width);
-        double maxY = selected.Words.Max(w => w.Y + w.Height);
-        ShowEditor(overlay, page,
-            selected.Text.Replace("\n", " "),
-            new SelectionRect(minX, minY, maxX - minX, maxY - minY),
-            caretOffset: null); // select-all
-    }
 
     /// <summary>Click a line in the TextEdit tool: caret lands where clicked.</summary>
     private void TryStartLineEdit(Canvas overlay, PageViewModel page, Point clickDip)
@@ -757,7 +748,7 @@ public partial class MainWindow : Window
             && TrueTextEdit.TryReplaceLine(
                 _session.CurrentBytes, _nativePage, _nativeOldText, text.Trim(), out byte[] updated))
         {
-            _session.ReplaceBaseBytes(updated);
+            _session.ReplaceBaseBytes(updated, _nativePage);
             await _session.RefreshPageAsync(_vm, _nativePage);
             _textSelections.Remove(_nativePage);
             foreach (var ov in CanvasExplorer.FindOverlays(PageScroll))
@@ -792,7 +783,7 @@ public partial class MainWindow : Window
             if ((ov.DataContext as PageViewModel)?.Number == _nativePage)
                 ov.Children.Clear();
         }
-        _session.MarkDirty();
+        _session.MarkDirty(_nativePage);
         _vm.Status = "Native text edited — baked into the PDF on export.";
     }
 
@@ -800,19 +791,20 @@ public partial class MainWindow : Window
     {
         if (sender is not Canvas overlay || overlay.DataContext is not PageViewModel page)
             return;
-        // Native editing: TextEdit tool drags do nothing (clicks edit);
-        // double-click opens the line editor; other tools select + copy.
+        // Double-click selects the word (all text tools); single clicks edit
+        // in the TextEdit tool, drag-select otherwise.
+        if (e.ClickCount == 2)
+        {
+            SelectWordAt(overlay, page, e.GetPosition(overlay));
+            e.Handled = true;
+            return;
+        }
+        // Native editing: TextEdit tool drags do nothing (clicks edit).
         if (_pen.Tool == PenTool.TextEdit)
         {
             _marqueeStartDip = e.GetPosition(overlay);
             overlay.CaptureMouse();
             overlay.Focus();
-            e.Handled = true;
-            return;
-        }
-        if (e.ClickCount == 2)
-        {
-            TryStartNativeEdit(overlay, page);
             e.Handled = true;
             return;
         }
@@ -827,6 +819,21 @@ public partial class MainWindow : Window
         // whatever toolbar box was focused before (e.g. the zoom level).
         overlay.Focus();
         e.Handled = true;
+    }
+
+    /// <summary>Double-click: select exactly the word under the cursor.</summary>
+    private void SelectWordAt(Canvas overlay, PageViewModel page, Point clickDip)
+    {
+        DiscardNativeEditor(commit: true);
+        var selected = TextSelector.WordSelection(
+            page.Words, clickDip.X / page.DipPerPtX, clickDip.Y / page.DipPerPtY);
+        overlay.Children.Clear();
+        if (selected.Words.Count == 0)
+            return;
+        _textSelections[page.Number] = selected;
+        PaintWordHighlights(overlay, page, selected);
+        overlay.Focus();
+        _vm.Status = $"Selected “{selected.Text}” — Ctrl+C to copy.";
     }
 
     private void TextOverlay_Move(object sender, MouseEventArgs e)
@@ -920,7 +927,7 @@ public partial class MainWindow : Window
         PersistSettings();
         RebuildPalette(); // refresh the selected ring
         if (_pen.RecolorSelection(CanvasExplorer.Find(PageScroll), page => _history.Push(page, CanvasStrokes)))
-            _session.MarkDirty();
+            _session.MarkDirty(SelectedInkStrokes().Select(t => t.Page));
         _session.ApplyToolToAll();
     }
 
@@ -936,7 +943,7 @@ public partial class MainWindow : Window
         if (vm is null || !vm.TextBoxes.Contains(item))
             return false;
         item.ColorArgb = argb;
-        _session.MarkDirty();
+        _session.MarkDirty(pageNumber);
         _vm.Status = "Text color updated.";
         return true;
     }
@@ -1053,7 +1060,11 @@ public partial class MainWindow : Window
 
     // ---------- open / save ----------
 
-    private void TextBoxEdited(object sender, TextChangedEventArgs e) => _session.MarkDirty();
+    private void TextBoxEdited(object sender, TextChangedEventArgs e)
+    {
+        if ((sender as FrameworkElement)?.DataContext is TextBoxItem box)
+            _session.MarkDirty(box.PageNumber);
+    }
 
     private void TextBoxPreviewKeyDown(object sender, KeyEventArgs e)
     {
@@ -1141,7 +1152,7 @@ public partial class MainWindow : Window
             return;
         item.FontSizePt = fontSizePt;
         item.DisplayFontSize = Math.Clamp(fontSizePt * vm.DipPerPtX, 8, 96);
-        _session.MarkDirty();
+        _session.MarkDirty(vm.Number);
         _vm.Status = $"Font size {fontSizePt:0.#} pt.";
     }
 
@@ -1168,7 +1179,7 @@ public partial class MainWindow : Window
         vm.TextBoxes.Remove(item);
         _focusedTextBox = null;
         UpdateFontControls();
-        _session.MarkDirty();
+        _session.MarkDirty(pageNumber);
         _vm.Status = "Text box deleted.";
     }
 
@@ -1291,6 +1302,7 @@ public partial class MainWindow : Window
             UpdateFontControls();
             await _session.OpenDocumentAsync(path, _vm);
             _currentPage = 0;
+            _composedRevisions.Clear();
             _thumbTimer?.Stop();
             if (_session.CurrentBytes is not null)
                 _renderQueue.Open(_session.CurrentBytes);

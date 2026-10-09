@@ -39,13 +39,15 @@ jobs:
       - run: dotnet test tests/Scribbles.Unit.Tests/Scribbles.Unit.Tests.csproj --no-build
       - run: dotnet test tests/Scribbles.Integration.Tests/Scribbles.Integration.Tests.csproj --no-build
 
-      - name: Publish self-contained
-        run: dotnet publish Scribbles.App/Scribbles.App.csproj -c Release -r win-x64 --self-contained -o publish -p:Version=${{ env.APP_VERSION }}
+      # Framework-dependent (~37MB vs ~196MB self-contained): the installer
+      # bootstraps the .NET 8 desktop runtime when missing (-f below).
+      - name: Publish framework-dependent
+        run: dotnet publish Scribbles.App/Scribbles.App.csproj -c Release -r win-x64 --self-contained false -o publish -p:Version=${{ env.APP_VERSION }}
 
       - name: Pack and upload with Velopack
         shell: pwsh
         run: |
           dotnet tool install -g vpk --version ${{ env.VELOPACK_VERSION }}
           vpk download github --repoUrl https://github.com/${{ github.repository }}
-          vpk pack -u ${{ env.PACK_ID }} -v ${{ env.APP_VERSION }} -p publish --mainExe Scribbles.App.exe
+          vpk pack -u ${{ env.PACK_ID }} -v ${{ env.APP_VERSION }} -p publish --mainExe Scribbles.App.exe -f net8-x64-desktop
           vpk upload github --repoUrl https://github.com/${{ github.repository }} --publish --releaseName "Scribbles ${{ env.APP_VERSION }}" --tag "v${{ env.APP_VERSION }}" --token ${{ secrets.GITHUB_TOKEN }}

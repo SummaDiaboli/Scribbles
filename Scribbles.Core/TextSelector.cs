@@ -102,6 +102,15 @@ public static class TextSelector
         return best;
     }
 
+    /// <summary>Double-click selection: the word at the point, else nearest, else empty.</summary>
+    public static SelectedText WordSelection(IReadOnlyList<PdfWord> words, double x, double y)
+    {
+        var word = WordAt(words, x, y) ?? WordNearest(words, x, y);
+        return word is null
+            ? new SelectedText(Array.Empty<PdfWord>(), "")
+            : new SelectedText(new[] { word }, word.Text);
+    }
+
     /// <summary>
     /// Browser anchor-range: span between two words in reading order
     /// (direction-independent), lines joined with newlines.
