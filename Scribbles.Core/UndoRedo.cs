@@ -22,8 +22,8 @@ public sealed class UndoRedo<TState>
         _undo.Push(priorState);
         while (_undo.Count > Capacity)
         {
-            // Drop oldest: rebuild without bottom element.
-            var items = _undo.Reverse().Skip(1).Reverse().ToArray();
+            // Drop oldest: rebuild bottom-up without the bottom element.
+            var items = _undo.Reverse().Skip(1).ToArray();
             _undo.Clear();
             foreach (var item in items)
                 _undo.Push(item);

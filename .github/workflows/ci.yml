@@ -14,7 +14,8 @@ jobs:
         with:
           dotnet-version: 8.0.x
       - run: dotnet restore Scribbles.sln
-      - run: dotnet test tests/Scribbles.Unit.Tests/Scribbles.Unit.Tests.csproj --collect:"XPlat Code Coverage" --results-directory coverage/unit
+      - run: dotnet build Scribbles.sln --no-restore
+      - run: dotnet test tests/Scribbles.Unit.Tests/Scribbles.Unit.Tests.csproj --no-build --collect:"XPlat Code Coverage" --results-directory coverage/unit
       - run: dotnet test tests/Scribbles.Integration.Tests/Scribbles.Integration.Tests.csproj --no-build
       - name: Coverage gate (90%+ on Core)
         shell: pwsh
