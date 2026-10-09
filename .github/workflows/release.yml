@@ -49,5 +49,8 @@ jobs:
         run: |
           dotnet tool install -g vpk --version ${{ env.VELOPACK_VERSION }}
           vpk download github --repoUrl https://github.com/${{ github.repository }}
-          vpk pack -u ${{ env.PACK_ID }} -v ${{ env.APP_VERSION }} -p publish --mainExe Scribbles.App.exe -f net8-x64-desktop
+          # packId stays namespaced (install dir %LocalAppData%\SummaDiaboli.Scribbles,
+          # clear of the %LocalAppData%\Scribbles data folder); packTitle is the
+          # user-facing name shown by the installer, shortcuts, and Programs.
+          vpk pack -u ${{ env.PACK_ID }} --packTitle Scribbles -v ${{ env.APP_VERSION }} -p publish --mainExe Scribbles.App.exe -f net8-x64-desktop
           vpk upload github --repoUrl https://github.com/${{ github.repository }} --publish --releaseName "Scribbles ${{ env.APP_VERSION }}" --tag "v${{ env.APP_VERSION }}" --token ${{ secrets.GITHUB_TOKEN }}
