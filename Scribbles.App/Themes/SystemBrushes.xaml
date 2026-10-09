@@ -141,6 +141,21 @@
         <Setter Property="BorderThickness" Value="1"/>
         <Setter Property="Foreground" Value="{DynamicResource AppForeground}"/>
         <Setter Property="Padding" Value="2"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <!-- No icon gutter: the framework template paints a hardcoded
+                     light strip no brush override can reach. -->
+                <ControlTemplate TargetType="ContextMenu">
+                    <Border Background="{TemplateBinding Background}"
+                            BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="{TemplateBinding BorderThickness}"
+                            Padding="{TemplateBinding Padding}"
+                            SnapsToDevicePixels="True">
+                        <StackPanel IsItemsHost="True" KeyboardNavigation.DirectionalNavigation="Cycle"/>
+                    </Border>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
     </Style>
     <Style TargetType="ToolTip">
         <Setter Property="Background" Value="{DynamicResource AppSurface}"/>
@@ -148,6 +163,20 @@
         <Setter Property="BorderThickness" Value="1"/>
         <Setter Property="Foreground" Value="{DynamicResource AppForeground}"/>
         <Setter Property="Padding" Value="8,6"/>
+    </Style>
+    <Style TargetType="Separator">
+        <Setter Property="Background" Value="{DynamicResource AppBorder}"/>
+        <Setter Property="Margin" Value="6,4"/>
+        <Setter Property="Height" Value="1"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Separator">
+                    <Border Background="{TemplateBinding Background}"
+                            Margin="{TemplateBinding Margin}"
+                            Height="{TemplateBinding Height}"/>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
     </Style>
     <!-- ComboBox dropdown rows follow the theme (popup chrome is OS-drawn). -->
     <Style TargetType="ComboBoxItem">

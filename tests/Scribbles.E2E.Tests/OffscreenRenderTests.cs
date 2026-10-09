@@ -3,6 +3,7 @@ using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
+using Shape = System.Windows.Shapes.Shape;
 using Shouldly;
 using static Scribbles.E2E.Tests.WpfTestHost;
 
@@ -331,6 +332,43 @@ public sealed class OffscreenRenderTests
         foreach (var item in new MenuItem[] { open, rename, delete })
             light += CountNear(Render(item, 240, 32), 0xF3, 0xF3, 0xF3, 24);
         light.ShouldBeGreaterThan(100, "context menu text should render in the light foreground");
+    });
+
+    private static List<T> FindVisual<T>(DependencyObject root) where T : DependencyObject
+    {
+        var found = new List<T>();
+        var queue = new Queue<DependencyObject>();
+        queue.Enqueue(root);
+        while (queue.Count > 0)
+        {
+            var current = queue.Dequeue();
+            if (current is T match)
+                found.Add(match);
+            for (int i = 0; i < VisualTreeHelper.GetChildrenCount(current); i++)
+                queue.Enqueue(VisualTreeHelper.GetChild(current, i));
+        }
+        return found;
+    }
+
+    [Fact]
+    public void ContextMenuTemplate_HasNoIconGutter() => Sta(() =>
+    {
+        // The stock ContextMenu template paints a hardcoded light icon gutter
+        // (left white strip) that no brush override can reach — seen on the
+        // home card menu. Our template must host items with no gutter shapes.
+        EnsureThemedApp("Dark");
+        var style = (Style)Application.Current.FindResource(typeof(ContextMenu));
+        var template = style.Setters.OfType<Setter>()
+            .FirstOrDefault(s => s.Property == Control.TemplateProperty)?.Value as ControlTemplate;
+        template.ShouldNotBeNull("ContextMenu needs an explicit template (framework one paints a white gutter)");
+        var root = template!.LoadContent() as DependencyObject;
+        root.ShouldNotBeNull("template must load");
+        bool IsLight(Color c) => 0.2126 * c.R + 0.7152 * c.G + 0.0722 * c.B > 127;
+        var gutters = FindVisual<Shape>(root!)
+            .Where(s => s.Fill is SolidColorBrush brush && IsLight(brush.Color))
+            .ToList();
+        gutters.ShouldBeEmpty("no light gutter strip allowed in the menu chrome");
+        FindVisual<StackPanel>(root!).Any(p => p.IsItemsHost).ShouldBeTrue("items host must exist");
     });
 
     [Fact]
