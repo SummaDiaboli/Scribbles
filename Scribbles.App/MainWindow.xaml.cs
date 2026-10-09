@@ -1252,11 +1252,21 @@ public partial class MainWindow : Window
     {
         try
         {
-            await _session.SaveAsync(_vm, saveAs ? null : _session.CurrentPath, () =>
+            string? saved = await _session.SaveAsync(_vm, saveAs ? null : _session.CurrentPath, () =>
             {
-                var dlg = new SaveFileDialog { Filter = "PDF files (*.pdf)|*.pdf" };
+                var dlg = new SaveFileDialog
+                {
+                    Filter = "PDF files (*.pdf)|*.pdf",
+                    FileName = Path.GetFileName(_session.CurrentPath) ?? "document.pdf",
+                };
                 return dlg.ShowDialog() == true ? dlg.FileName : null;
             }, saveAs);
+            if (saved is not null)
+            {
+                _settings = _settings with { RecentFiles = Core.RecentFiles.Add(_settings.RecentFiles, saved) };
+                PersistSettings();
+                RefreshRecentMenu();
+            }
         }
         catch (Exception ex)
         {

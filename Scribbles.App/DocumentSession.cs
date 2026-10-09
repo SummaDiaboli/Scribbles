@@ -350,12 +350,13 @@ internal sealed class DocumentSession
     /// Save As must always prompt: the CurrentPath fallback applies to plain
     /// Save only, otherwise Save As silently overwrites the original.
     /// </summary>
-    public async Task SaveAsync(MainViewModel vm, string? path, Func<string?> promptSaveAs, bool saveAs = false)
+    /// <returns>The saved path, or null when there was nothing to save or the prompt was cancelled.</returns>
+    public async Task<string?> SaveAsync(MainViewModel vm, string? path, Func<string?> promptSaveAs, bool saveAs = false)
     {
         if (CurrentBytes is null)
         {
             vm.Status = "Nothing to save — open a PDF first.";
-            return;
+            return null;
         }
         if (!saveAs)
             path ??= CurrentPath;
@@ -363,7 +364,7 @@ internal sealed class DocumentSession
         {
             path = promptSaveAs();
             if (path is null)
-                return;
+                return null;
         }
         var model = CollectModel(vm.Pages);
         byte[] current = CurrentBytes;
@@ -378,6 +379,7 @@ internal sealed class DocumentSession
         CurrentBytes = saved;
         SetClean();
         vm.Status = $"Saved {Path.GetFileName(target)}.";
+        return target;
     }
 
     public void RestoreSnapshot(int page, PageState state)

@@ -114,4 +114,41 @@ public sealed class OpenRealizeTests
         roundTripped.HashesMatch.ShouldBeTrue();
         roundTripped.Model!.Pages[0].Strokes.Count.ShouldBe(2);
     });
+
+    [Fact]
+    public void SaveAs_ReturnsNewPath_AndLeavesOriginalUntouched() => Sta(async () =>
+    {
+        EnsureThemedApp("Light");
+        var store = new ScribblesPdfStore();
+        string original = WritePdf(store.Save(BasePdf(),
+            new NoteDocument("", Array.Empty<NotePage>())));
+        long before = new FileInfo(original).Length;
+
+        var converter = new InkModelConverter();
+        var inks = new List<InkCanvas>();
+        var vm = new MainViewModel(Scribbles.App.App.Themes);
+        var session = new DocumentSession(
+            store, converter, new StrokeHistory(converter, BoxesOf(vm)), new PenToolbarController(),
+            () => inks, SetBoxesOf(vm));
+        await session.OpenDocumentAsync(original, vm);
+
+        string target = Path.Combine(Path.GetTempPath(), Guid.NewGuid() + ".pdf");
+        try
+        {
+            string? saved = await session.SaveAsync(vm, null, () => target, saveAs: true);
+            saved.ShouldBe(target, "Save As must report the new path for recents");
+            session.CurrentPath.ShouldBe(target);
+            new FileInfo(original).Length.ShouldBe(before, "Save As must not touch the original");
+            File.Exists(target).ShouldBeTrue("Save As must write the new file");
+
+            string? cancelled = await session.SaveAsync(vm, null, () => null, saveAs: true);
+            cancelled.ShouldBeNull("cancelled Save As reports nothing to record");
+        }
+        finally
+        {
+            File.Delete(original);
+            if (File.Exists(target))
+                File.Delete(target);
+        }
+    });
 }
