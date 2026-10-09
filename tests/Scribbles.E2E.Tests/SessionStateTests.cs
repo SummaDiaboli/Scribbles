@@ -7,6 +7,7 @@ using System.Windows.Media.Imaging;
 using Scribbles.App;
 using Scribbles.App.Services;
 using Scribbles.App.ViewModels;
+using Scribbles.Core;
 using Shouldly;
 using static Scribbles.E2E.Tests.WpfTestHost;
 
@@ -19,7 +20,7 @@ namespace Scribbles.E2E.Tests;
 /// </summary>
 public sealed class SessionStateTests
 {
-    private static (DocumentSession Session, InkCanvas Page) CreateSession()
+    private static (DocumentSession Session, InkCanvas Page, List<TextBoxItem> Boxes) CreateSession()
     {
         var converter = new InkModelConverter();
         var canvas = new InkCanvas
@@ -33,14 +34,20 @@ public sealed class SessionStateTests
             },
         };
         var inks = new List<InkCanvas> { canvas };
+        var boxes = new List<TextBoxItem>();
         var session = new DocumentSession(
             new Scribbles.Pdf.ScribblesPdfStore(),
             converter,
-            new StrokeHistory(converter),
+            new StrokeHistory(converter, _ => boxes.Select(b => b.Clone()).ToList()),
             new PenToolbarController(),
-            () => inks);
+            () => inks,
+            (_, next) =>
+            {
+                boxes.Clear();
+                boxes.AddRange(next.Select(b => b.Clone()));
+            });
         session.HookCanvases();
-        return (session, canvas);
+        return (session, canvas, boxes);
     }
 
     private static Stroke MakeStroke() => new(
@@ -53,7 +60,7 @@ public sealed class SessionStateTests
     [Fact]
     public void AddingStroke_RaisesStateChanged_AndEnablesUndo() => Sta(() =>
     {
-        var (session, canvas) = CreateSession();
+        var (session, canvas, _) = CreateSession();
         int events = 0;
         session.StateChanged += (_, _) => events++;
 
@@ -70,7 +77,7 @@ public sealed class SessionStateTests
     [Fact]
     public void Undo_AfterStroke_EnablesRedo() => Sta(() =>
     {
-        var (session, canvas) = CreateSession();
+        var (session, canvas, _) = CreateSession();
         canvas.Strokes.Add(MakeStroke());
 
         session.Undo(new[] { 1 });
@@ -82,6 +89,25 @@ public sealed class SessionStateTests
         session.Redo(new[] { 1 });
         canvas.Strokes.Count.ShouldBe(1, "redo should restore the stroke");
         session.CanUndoAny().ShouldBeTrue();
+    });
+
+    [Fact]
+    public void Undo_RemovesConvertedBox_AndRestoresInk() => Sta(() =>
+    {
+        var (session, canvas, boxes) = CreateSession();
+        canvas.Strokes.Add(MakeStroke());
+
+        // Convert pattern: drop the ink (tracked), add the box (live-only).
+        canvas.Strokes.Clear();
+        boxes.Add(new TextBoxItem { Id = "t", PageNumber = 1, X = 1, Y = 2, Width = 3, Height = 4, Text = "hi" });
+
+        session.Undo(new[] { 1 });
+        canvas.Strokes.Count.ShouldBe(1, "undo brings the ink back");
+        boxes.ShouldBeEmpty("undo removes the converted box too");
+
+        session.Redo(new[] { 1 });
+        canvas.Strokes.ShouldBeEmpty("redo re-applies the conversion");
+        boxes.ShouldBeEmpty();
     });
 
     [Fact]

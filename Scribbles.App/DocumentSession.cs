@@ -20,6 +20,7 @@ internal sealed class DocumentSession
     private readonly StrokeHistory _history;
     private readonly PenToolbarController _pen;
     private readonly Func<IEnumerable<InkCanvas>> _findCanvases;
+    private readonly Action<int, List<TextBoxItem>> _setBoxes;
 
     public string? CurrentPath { get; private set; }
     public byte[]? CurrentBytes { get; private set; }
@@ -42,13 +43,15 @@ internal sealed class DocumentSession
         InkModelConverter converter,
         StrokeHistory history,
         PenToolbarController pen,
-        Func<IEnumerable<InkCanvas>> findCanvases)
+        Func<IEnumerable<InkCanvas>> findCanvases,
+        Action<int, List<TextBoxItem>> setBoxes)
     {
         _store = store;
         _converter = converter;
         _history = history;
         _pen = pen;
         _findCanvases = findCanvases;
+        _setBoxes = setBoxes;
     }
 
     public void MarkDirty()
@@ -288,14 +291,18 @@ internal sealed class DocumentSession
         SetClean();
     }
 
-    public void ExportFlatCopy(MainViewModel vm, string targetPath)
+    public async Task ExportFlatCopy(
+        MainViewModel vm, string targetPath, Func<NoteDocument, Task<NoteDocument>>? enrichAsync = null)
     {
         if (CurrentBytes is null)
         {
             vm.Status = "Nothing to export — open a PDF first.";
             return;
         }
-        byte[] exported = _store.ExportFlat(CurrentBytes, CollectModel(vm.Pages));
+        var model = CollectModel(vm.Pages);
+        if (enrichAsync is not null)
+            model = await enrichAsync(model);
+        byte[] exported = _store.ExportFlat(CurrentBytes, model);
         File.WriteAllBytes(targetPath, exported);
         vm.Status = $"Exported flattened copy to {Path.GetFileName(targetPath)}.";
     }
@@ -331,7 +338,7 @@ internal sealed class DocumentSession
         vm.Status = $"Saved {Path.GetFileName(path)}.";
     }
 
-    public void RestoreSnapshot(int page, byte[] state)
+    public void RestoreSnapshot(int page, PageState state)
     {
         var canvas = CanvasForPage(page);
         if (canvas is null)
@@ -339,13 +346,14 @@ internal sealed class DocumentSession
         _history.Suspended = true;
         try
         {
-            var strokes = new StrokeCollection(new MemoryStream(state));
+            var strokes = new StrokeCollection(new MemoryStream(state.Ink));
             foreach (var s in strokes)
                 _converter.GetId(s);
             // Replace first, then re-hook: the hook belongs to the live collection.
             canvas.Strokes = strokes;
             HookOne(canvas);
             _history.Snapshot(page, strokes);
+            _setBoxes(page, state.Boxes.Select(b => b.Clone()).ToList());
             _pen.ApplyTo(canvas);
         }
         finally

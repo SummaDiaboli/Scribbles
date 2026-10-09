@@ -181,6 +181,79 @@ public sealed class OffscreenRenderTests
     });
 
     [Fact]
+    public void OverlayTextBox_RendersTransparentWithText() => Sta(() =>
+    {
+        EnsureThemedApp("Dark");
+        var box = new TextBox
+        {
+            Style = (Style)Application.Current.FindResource("OverlayTextBox"),
+            Text = "Hello",
+            Foreground = new SolidColorBrush(Colors.Black),
+            FontSize = 16,
+            Width = 120,
+            Height = 32,
+        };
+        var bmp = Render(box, 120, 32);
+        int w = bmp.PixelWidth, h = bmp.PixelHeight;
+        byte[] pixels = new byte[w * h * 4];
+        bmp.CopyPixels(pixels, w * 4, 0);
+        int transparent = 0;
+        for (int i = 0; i < w * h; i++)
+        {
+            if (pixels[i * 4 + 3] < 64)
+                transparent++;
+        }
+        // Detached text doesn't rasterize glyphs off-screen, so this locks the
+        // reported bug only: the face must stay transparent, never an opaque box.
+        transparent.ShouldBeGreaterThan((int)(w * h * 0.9), "overlay box background must stay transparent");
+    });
+
+    [Fact]
+    public void OverlayTextBoxTemplate_HasNoLocalBackgroundOverride()
+    {
+        // Regression guard (2026-10-08): an explicit Background on the
+        // converted-box element silently beat the transparent style and
+        // painted dark boxes. The style must own the background.
+        string dir = Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "Scribbles.App");
+        string xaml = File.ReadAllText(Path.GetFullPath(Path.Combine(dir, "MainWindow.xaml")));
+        int templateAt = xaml.IndexOf("ItemsSource=\"{Binding TextBoxes}\"", StringComparison.Ordinal);
+        templateAt.ShouldBeGreaterThan(-1, "textbox overlay template should exist");
+        int boxAt = xaml.IndexOf("<TextBox Text=\"{Binding Text", templateAt, StringComparison.Ordinal);
+        boxAt.ShouldBeGreaterThan(-1, "overlay TextBox element should exist");
+        int boxEnd = xaml.IndexOf("/>", boxAt, StringComparison.Ordinal);
+        string element = xaml.Substring(boxAt, boxEnd - boxAt);
+        element.ShouldNotContain("Background=");
+        element.ShouldNotContain("BorderBrush=");
+    }
+
+    [Fact]
+    public void IconToggle_Checked_ShowsAccentTint() => Sta(() =>
+    {
+        EnsureThemedApp("Dark");
+        var style = (Style)Application.Current.FindResource("IconToggle");
+
+        int TintedCount(FrameworkElement el)
+        {
+            var bmp = Render(el, 32, 32);
+            byte[] pixels = new byte[32 * 32 * 4];
+            bmp.CopyPixels(pixels, 32 * 4, 0);
+            int tinted = 0;
+            for (int i = 0; i < 32 * 32; i++)
+            {
+                byte b = pixels[i * 4], g = pixels[i * 4 + 1], r = pixels[i * 4 + 2], a = pixels[i * 4 + 3];
+                if (a > 40 && b > r + 20 && g > r)
+                    tinted++;
+            }
+            return tinted;
+        }
+
+        var on = new RadioButton { Style = style, IsChecked = true, Width = 32, Height = 32 };
+        var off = new RadioButton { Style = style, IsChecked = false, Width = 32, Height = 32 };
+        TintedCount(on).ShouldBeGreaterThan(150, "checked tool must show the accent tint");
+        TintedCount(off).ShouldBeLessThan(50, "unchecked tool must stay clean");
+    });
+
+    [Fact]
     public void DarkComboRow_RendersLightTextOnDarkSurface() => Sta(() =>
     {
         EnsureThemedApp("Dark");

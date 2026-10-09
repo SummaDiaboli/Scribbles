@@ -4,3 +4,4 @@
 TestResults/
 *.user
 PLAN.md
+dist/

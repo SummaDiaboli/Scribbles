@@ -24,12 +24,36 @@ public sealed partial class TextBoxItem : ObservableObject
     public double Y { get; set; }
     public double Width { get; set; }
     public double Height { get; set; }
-    public double FontSizePt { get; set; } = 12;
-    public uint ColorArgb { get; set; } = 0xFF000000;
+
+    [ObservableProperty]
+    private double _fontSizePt = 12;
+
+    [ObservableProperty]
+    private uint _colorArgb = 0xFF000000;
     public TextBoxKind Kind { get; set; } = TextBoxKind.Converted;
 
     [ObservableProperty]
     private string _text = "";
+
+    /// <summary>Deep copy (snapshots must not alias live items).</summary>
+    public TextBoxItem Clone() => new()
+    {
+        Id = Id,
+        PageNumber = PageNumber,
+        X = X,
+        Y = Y,
+        Width = Width,
+        Height = Height,
+        FontSizePt = FontSizePt,
+        ColorArgb = ColorArgb,
+        Kind = Kind,
+        Text = Text,
+        DisplayX = DisplayX,
+        DisplayY = DisplayY,
+        DisplayWidth = DisplayWidth,
+        DisplayHeight = DisplayHeight,
+        DisplayFontSize = DisplayFontSize,
+    };
 
     /// <summary>Display coordinates in DIPs (set by the viewer from page factors, never persisted).</summary>
     [JsonIgnore]
@@ -44,6 +68,7 @@ public sealed partial class TextBoxItem : ObservableObject
     [JsonIgnore]
     public double DisplayHeight { get; set; }
 
-    [JsonIgnore]
-    public double DisplayFontSize { get; set; } = 12;
+    [ObservableProperty]
+    [property: System.Text.Json.Serialization.JsonIgnore]
+    private double _displayFontSize = 12;
 }

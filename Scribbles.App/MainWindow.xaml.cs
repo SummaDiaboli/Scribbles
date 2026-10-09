@@ -33,15 +33,17 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
-        _history = new StrokeHistory(_converter);
-        _session = new DocumentSession(
-            new ScribblesPdfStore(), _converter, _history, _pen, () => CanvasExplorer.Find(PageScroll));
-        _session.StateChanged += (_, _) => UpdateUndoRedoState();
         _vm = new MainViewModel(App.Themes);
+        _history = new StrokeHistory(_converter, BoxesFor);
+        _session = new DocumentSession(
+            new ScribblesPdfStore(), _converter, _history, _pen,
+            () => CanvasExplorer.Find(PageScroll), SetBoxesFor);
+        _session.StateChanged += (_, _) => UpdateUndoRedoState();
         _vm.RequestSave += (_, _) => SaveSafely(saveAs: false);
         _vm.RequestUndo += (_, _) => _session.Undo(TargetPages());
         _vm.RequestRedo += (_, _) => _session.Redo(TargetPages());
         _vm.RequestDeleteSelection += (_, _) => _session.DeleteSelection();
+        _vm.RequestDeleteSelection += (_, _) => DeleteFocusedTextBox();
         _vm.RequestCopyText += (_, _) => CopyTextSelection();
         _vm.RequestOpen += (_, _) =>
         {
@@ -50,7 +52,8 @@ public partial class MainWindow : Window
                 OpenSafely(dlg.FileName);
         };
         DataContext = _vm;
-        _vm.Status = $"Scribbles ({BuildStamp()}) — open a PDF to start writing. Pen draws, touch scrolls.";
+        Title = $"Scribbles {AppVersion()}";
+        _vm.Status = $"Scribbles {AppVersion()} — open a PDF to start writing. Pen draws, touch scrolls.";
         App.Themes.ThemeChanged += (_, theme) =>
         {
             _settings = _settings with { Theme = theme };
@@ -202,11 +205,12 @@ public partial class MainWindow : Window
         var dlg = new ColorPickerDialog(_pen.InkColor, _settings.Palette) { Owner = this };
         if (dlg.ShowDialog() == true)
         {
-            _pen.SetColor(dlg.Selected);
             var (a, r, g, b) = (dlg.Selected.A, dlg.Selected.R, dlg.Selected.G, dlg.Selected.B);
+            uint argb = InkUnits.ToArgb(a, r, g, b);
+            _pen.SetColor(dlg.Selected);
             _settings = _settings with
             {
-                PenColorArgb = InkUnits.ToArgb(a, r, g, b),
+                PenColorArgb = argb,
                 Palette = dlg.Palette,
             };
             PersistSettings();
@@ -349,115 +353,181 @@ public partial class MainWindow : Window
 
     private PageViewModel? PageVm(int page) => _vm.Pages.FirstOrDefault(p => p.Number == page);
 
-    private List<Core.InkStroke> ToModels(List<(int Page, InkCanvas Ink, Stroke Stroke)> selected)
-    {
-        var models = new List<Core.InkStroke>();
-        foreach (var (page, _, stroke) in selected)
-        {
-            var vm = PageVm(page);
-            models.Add(_converter.ToModel(stroke,
-                page, vm?.DipPerPtX ?? InkUnits.DipsPerPoint, vm?.DipPerPtY ?? InkUnits.DipsPerPoint));
-        }
-        return models;
-    }
+    private async void Convert_Click(object sender, RoutedEventArgs e) =>
+        await ConvertStrokesAsync(SelectedInkStrokes(), "Lasso some handwriting first, then Convert.");
 
-    private async void Convert_Click(object sender, RoutedEventArgs e)
+    private async void Copyable_Click(object sender, RoutedEventArgs e) =>
+        await MarkCopyableStrokesAsync(SelectedInkStrokes(), "Lasso some handwriting first, then Make copyable.");
+
+    private void ConvertPage_Click(object sender, RoutedEventArgs e)
     {
-        var selected = SelectedInkStrokes();
-        if (selected.Count == 0)
+        int? page = CurrentPage();
+        if (page is null)
         {
-            _vm.Status = "Lasso some handwriting first, then Convert.";
+            _vm.Status = "Open a PDF with ink first.";
             return;
         }
+        _ = ConvertStrokesAsync(PageStrokes(page.Value), "No ink strokes on this page.");
+    }
+
+    private void CopyablePage_Click(object sender, RoutedEventArgs e)
+    {
+        int? page = CurrentPage();
+        if (page is null)
+        {
+            _vm.Status = "Open a PDF with ink first.";
+            return;
+        }
+        _ = MarkCopyableStrokesAsync(PageStrokes(page.Value), "No ink strokes on this page.");
+    }
+
+    private List<(int Page, InkCanvas Ink, Stroke Stroke)> PageStrokes(int page)
+    {
+        var list = new List<(int, InkCanvas, Stroke)>();
+        var canvas = _session.CanvasForPage(page);
+        if (canvas is null)
+            return list;
+        foreach (var stroke in canvas.Strokes)
+            list.Add((page, canvas, stroke));
+        return list;
+    }
+
+    private int? CurrentPage()
+    {
+        foreach (var ink in CanvasExplorer.Find(PageScroll))
+        {
+            if (ink.IsFocused || ink.IsKeyboardFocusWithin)
+                return CanvasExplorer.GetPageNumber(ink);
+        }
+        foreach (var ink in CanvasExplorer.Find(PageScroll))
+        {
+            if (ink.Strokes.Count > 0)
+                return CanvasExplorer.GetPageNumber(ink);
+        }
+        return _vm.Pages.FirstOrDefault()?.Number;
+    }
+
+    private async Task<string?> RecognizeOrStatusAsync(List<Core.InkStroke> models)
+    {
         _vm.Status = "Recognizing handwriting…";
         string? text = null;
         try
         {
-            text = await _recognizer.RecognizeAsync(ToModels(selected));
+            text = await _recognizer.RecognizeAsync(models);
         }
         catch (Exception ex)
         {
             _vm.Status = $"Recognition failed: {ex.Message}";
-            return;
+            return null;
         }
         if (string.IsNullOrWhiteSpace(text))
         {
             _vm.Status = _recognizer.IsAvailable
                 ? "No text recognized — try larger, clearer writing."
                 : "No handwriting recognizer installed (Windows Settings → Language → Handwriting).";
+            return null;
+        }
+        return text;
+    }
+
+    private async Task ConvertStrokesAsync(
+        List<(int Page, InkCanvas Ink, Stroke Stroke)> selected, string emptyHint)
+    {
+        if (selected.Count == 0)
+        {
+            _vm.Status = emptyHint;
             return;
         }
-
-        foreach (var group in selected.GroupBy(t => t.Page))
+        int converted = 0;
+        foreach (var pageGroup in selected.GroupBy(t => t.Page))
         {
-            var vm = PageVm(group.Key);
+            var vm = PageVm(pageGroup.Key);
             if (vm is null)
                 continue;
-            _history.Push(group.Key, CanvasStrokes);
-            var models = group.Select(t =>
+            var models = pageGroup.Select(t =>
             {
                 var v = PageVm(t.Page);
                 return _converter.ToModel(t.Stroke, t.Page,
                     v?.DipPerPtX ?? InkUnits.DipsPerPoint, v?.DipPerPtY ?? InkUnits.DipsPerPoint);
             }).ToList();
-            foreach (var stroke in group.Select(t => t.Stroke).ToList())
+            _history.Push(pageGroup.Key, CanvasStrokes);
+            foreach (var line in InkLineGrouping.GroupByLines(models))
             {
-                group.First().Ink.Strokes.Remove(stroke);
-                _converter.Forget(stroke);
+                string? text = await RecognizeOrStatusAsync(line.ToList());
+                if (string.IsNullOrWhiteSpace(text))
+                    continue;
+                var lineStrokes = pageGroup
+                    .Where(t => line.Any(m => m.Id == _converter.GetId(t.Stroke)))
+                    .ToList();
+                foreach (var stroke in lineStrokes.Select(t => t.Stroke).ToList())
+                {
+                    pageGroup.First().Ink.Strokes.Remove(stroke);
+                    _converter.Forget(stroke);
+                }
+                double minX = line.Min(m => m.Points.Min(p => p.X));
+                double minY = line.Min(m => m.Points.Min(p => p.Y));
+                double maxX = line.Max(m => m.Points.Max(p => p.X));
+                double maxY = line.Max(m => m.Points.Max(p => p.Y));
+                var box = new TextBoxItem
+                {
+                    Id = Guid.NewGuid().ToString("N"),
+                    PageNumber = pageGroup.Key,
+                    X = minX,
+                    Y = minY,
+                    Width = Math.Max(60, maxX - minX),
+                    Height = Math.Max(20, maxY - minY),
+                    Text = text,
+                    FontSizePt = Math.Clamp(maxY - minY, 8, 48),
+                    ColorArgb = line.First().ColorArgb,
+                    Kind = TextBoxKind.Converted,
+                };
+                DocumentSession.SetDisplay(box, vm.DipPerPtX, vm.DipPerPtY);
+                vm.TextBoxes.Add(box);
+                converted++;
             }
-            double minX = models.Min(m => m.Points.Min(p => p.X));
-            double minY = models.Min(m => m.Points.Min(p => p.Y));
-            double maxX = models.Max(m => m.Points.Max(p => p.X));
-            double maxY = models.Max(m => m.Points.Max(p => p.Y));
-            var box = new TextBoxItem
-            {
-                Id = Guid.NewGuid().ToString("N"),
-                PageNumber = group.Key,
-                X = minX,
-                Y = minY,
-                Width = Math.Max(60, maxX - minX),
-                Height = Math.Max(20, maxY - minY),
-                Text = text,
-                FontSizePt = Math.Clamp(maxY - minY, 8, 48),
-                ColorArgb = 0xFF000000,
-                Kind = TextBoxKind.Converted,
-            };
-            DocumentSession.SetDisplay(box, vm.DipPerPtX, vm.DipPerPtY);
-            vm.TextBoxes.Add(box);
         }
         _session.MarkDirty();
-        _vm.Status = "Converted to text — edit freely.";
+        _vm.Status = converted > 0
+            ? $"Converted {converted} line(s) to text — edit freely."
+            : "Nothing converted.";
     }
 
-    private async void Copyable_Click(object sender, RoutedEventArgs e)
+    private async Task MarkCopyableStrokesAsync(
+        List<(int Page, InkCanvas Ink, Stroke Stroke)> selected, string emptyHint)
     {
-        var selected = SelectedInkStrokes();
         if (selected.Count == 0)
         {
-            _vm.Status = "Lasso some handwriting first, then Make copyable.";
+            _vm.Status = emptyHint;
             return;
         }
-        _vm.Status = "Recognizing handwriting…";
-        string? text = null;
-        try
+        var pageGroups = selected.GroupBy(t => t.Page).ToList();
+        var modelsByPage = pageGroups.ToDictionary(
+            g => g.Key,
+            g => g.Select(t =>
+            {
+                var v = PageVm(t.Page);
+                return (View: t, Model: _converter.ToModel(t.Stroke, t.Page,
+                    v?.DipPerPtX ?? InkUnits.DipsPerPoint, v?.DipPerPtY ?? InkUnits.DipsPerPoint));
+            }).ToList());
+        int marked = 0;
+        foreach (var (page, pairs) in modelsByPage)
         {
-            text = await _recognizer.RecognizeAsync(ToModels(selected));
+            foreach (var line in InkLineGrouping.GroupByLines(pairs.Select(p => p.Model).ToList()))
+            {
+                string? text = await RecognizeOrStatusAsync(line.ToList());
+                if (string.IsNullOrWhiteSpace(text))
+                    continue;
+                var ids = line.Select(m => m.Id).ToHashSet();
+                _session.MarkCopyable(
+                    pairs.Where(p => ids.Contains(p.Model.Id))
+                        .Select(p => (p.View.Page, p.View.Stroke, p.Model.Id)),
+                    text);
+                marked += ids.Count;
+            }
         }
-        catch (Exception ex)
-        {
-            _vm.Status = $"Recognition failed: {ex.Message}";
-            return;
-        }
-        if (string.IsNullOrWhiteSpace(text))
-        {
-            _vm.Status = _recognizer.IsAvailable
-                ? "No text recognized — try larger, clearer writing."
-                : "No handwriting recognizer installed (Windows Settings → Language → Handwriting).";
-            return;
-        }
-        _session.MarkCopyable(
-            selected.Select(t => (t.Page, t.Stroke, _converter.GetId(t.Stroke))), text);
-        _vm.Status = $"Marked {selected.Count} stroke(s) copyable — embeds on export.";
+        _vm.Status = marked > 0
+            ? $"Marked {marked} stroke(s) copyable — embeds on export."
+            : "Nothing marked.";
     }
 
     // ---------- native text editing (dedicated tool + double-click) ----------
@@ -767,6 +837,23 @@ public partial class MainWindow : Window
         _session.ApplyToolToAll();
     }
 
+    /// <summary>
+    /// Font color for the focused text box (dedicated control; the palette
+    /// stays pen-only so colors can always be swapped from the toolbar).
+    /// </summary>
+    private bool TrySetFocusedBoxColor(uint argb)
+    {
+        if (_focusedTextBox is not (int pageNumber, TextBoxItem item))
+            return false;
+        var vm = _vm.Pages.FirstOrDefault(p => p.Number == pageNumber);
+        if (vm is null || !vm.TextBoxes.Contains(item))
+            return false;
+        item.ColorArgb = argb;
+        _session.MarkDirty();
+        _vm.Status = "Text color updated.";
+        return true;
+    }
+
     private void Color_Click(object sender, RoutedEventArgs e)
     {
         // Legacy fixed swatches (replaced by the settings-backed palette). Kept
@@ -803,6 +890,19 @@ public partial class MainWindow : Window
 
     private StrokeCollection? CanvasStrokes(int page) => _session.CanvasForPage(page)?.Strokes;
 
+    private List<TextBoxItem> BoxesFor(int page) =>
+        PageVm(page)?.TextBoxes.Select(b => b.Clone()).ToList() ?? new List<TextBoxItem>();
+
+    private void SetBoxesFor(int page, List<TextBoxItem> boxes)
+    {
+        var vm = PageVm(page);
+        if (vm is null)
+            return;
+        vm.TextBoxes.Clear();
+        foreach (var box in boxes)
+            vm.TextBoxes.Add(box);
+    }
+
     // ---------- edit actions ----------
 
     private void Undo_Click(object sender, RoutedEventArgs e) => _session.Undo(TargetPages());
@@ -820,7 +920,11 @@ public partial class MainWindow : Window
         RedoMenuItem.IsEnabled = canRedo;
     }
 
-    private void DeleteSelection_Click(object sender, RoutedEventArgs e) => _session.DeleteSelection();
+    private void DeleteSelection_Click(object sender, RoutedEventArgs e)
+    {
+        _session.DeleteSelection();
+        DeleteFocusedTextBox();
+    }
 
     private List<int> TargetPages()
     {
@@ -864,9 +968,126 @@ public partial class MainWindow : Window
 
     private void TextBoxEdited(object sender, TextChangedEventArgs e) => _session.MarkDirty();
 
+    private void TextBoxPreviewKeyDown(object sender, KeyEventArgs e)
+    {
+        // Plain Del edits characters while typing; Ctrl+Del deletes the box.
+        if (e.Key == Key.Delete && Keyboard.Modifiers.HasFlag(ModifierKeys.Control))
+        {
+            DeleteFocusedTextBox();
+            e.Handled = true;
+        }
+    }
+
+    private (int Page, TextBoxItem Item)? _focusedTextBox;
+
+    private void TextBoxFocused(object sender, KeyboardFocusChangedEventArgs e)
+    {
+        if (sender is not FrameworkElement el || el.DataContext is not TextBoxItem item)
+            return;
+        _focusedTextBox = (PageOf(el), item);
+        UpdateFontControls();
+    }
+
+    // NOTE: no LostKeyboardFocus clearing — clicking the trash button moves
+    // focus first, which would wipe the reference before deletion runs.
+    // DeleteFocusedTextBox is guarded (missing page/item is a safe no-op).
+
+    private PageViewModel? FocusedBoxPage(out TextBoxItem? item)
+    {
+        item = null;
+        if (_focusedTextBox is not (int pageNumber, TextBoxItem candidate))
+            return null;
+        var vm = _vm.Pages.FirstOrDefault(p => p.Number == pageNumber);
+        if (vm is null || !vm.TextBoxes.Contains(candidate))
+            return null;
+        item = candidate;
+        return vm;
+    }
+
+    private void UpdateFontControls()
+    {
+        bool live = FocusedBoxPage(out TextBoxItem? item) is not null && item is not null;
+        FontColorButton.IsEnabled = live;
+        FontSizeBox.IsEnabled = live;
+        if (!live || item is null)
+            return;
+        var (a, r, g, b) = ((byte)(item.ColorArgb >> 24), (byte)(item.ColorArgb >> 16), (byte)(item.ColorArgb >> 8), (byte)item.ColorArgb);
+        var brush = new SolidColorBrush(Color.FromArgb(a, r, g, b));
+        FontColorSwatch.Fill = brush;
+        FontColorGlyph.Foreground = brush;
+        FontSizeBox.Text = item.FontSizePt.ToString("0.#");
+    }
+
+    private void FontColor_Click(object sender, RoutedEventArgs e)
+    {
+        var vm = FocusedBoxPage(out TextBoxItem? item);
+        if (vm is null || item is null)
+            return;
+        var (a, r, g, b) = ((byte)(item.ColorArgb >> 24), (byte)(item.ColorArgb >> 16), (byte)(item.ColorArgb >> 8), (byte)item.ColorArgb);
+        var dlg = new ColorPickerDialog(Color.FromArgb(a, r, g, b), _settings.Palette) { Owner = this };
+        if (dlg.ShowDialog() != true)
+            return;
+        var (da, dr, dg, db) = (dlg.Selected.A, dlg.Selected.R, dlg.Selected.G, dlg.Selected.B);
+        TrySetFocusedBoxColor(InkUnits.ToArgb(da, dr, dg, db));
+        _settings = _settings with { Palette = dlg.Palette };
+        PersistSettings();
+        RebuildPalette();
+        UpdateFontControls();
+    }
+
+    private void FontSizeBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        double? size = null;
+        if (FontSizeBox.SelectedItem is ComboBoxItem preset
+            && double.TryParse(preset.Tag?.ToString(), out double presetSize))
+            size = presetSize;
+        else if (double.TryParse(FontSizeBox.Text, out double custom) && custom is >= 6 and <= 144)
+            size = custom;
+        if (size is double pt)
+            SetFocusedBoxFontSize(pt);
+    }
+
+    private void SetFocusedBoxFontSize(double fontSizePt)
+    {
+        var vm = FocusedBoxPage(out TextBoxItem? item);
+        if (vm is null || item is null)
+            return;
+        item.FontSizePt = fontSizePt;
+        item.DisplayFontSize = Math.Clamp(fontSizePt * vm.DipPerPtX, 8, 96);
+        _session.MarkDirty();
+        _vm.Status = $"Font size {fontSizePt:0.#} pt.";
+    }
+
+    private static int PageOf(DependencyObject element)
+    {
+        DependencyObject? current = element;
+        while (current is not null)
+        {
+            if (current is FrameworkElement fe && fe.DataContext is PageViewModel page)
+                return page.Number;
+            current = VisualTreeHelper.GetParent(current);
+        }
+        return 0;
+    }
+
+    private void DeleteFocusedTextBox()
+    {
+        if (_focusedTextBox is not (int pageNumber, TextBoxItem item))
+            return;
+        var vm = _vm.Pages.FirstOrDefault(p => p.Number == pageNumber);
+        if (vm is null || !vm.TextBoxes.Contains(item))
+            return;
+        _history.Push(pageNumber, CanvasStrokes);
+        vm.TextBoxes.Remove(item);
+        _focusedTextBox = null;
+        UpdateFontControls();
+        _session.MarkDirty();
+        _vm.Status = "Text box deleted.";
+    }
+
     private void SaveAs_Click(object sender, RoutedEventArgs e) => SaveSafely(saveAs: true);
 
-    private void Export_Click(object sender, RoutedEventArgs e)
+    private async void Export_Click(object sender, RoutedEventArgs e)
     {
         if (_session.CurrentBytes is null)
         {
@@ -878,12 +1099,67 @@ public partial class MainWindow : Window
             return;
         try
         {
-            _session.ExportFlatCopy(_vm, dlg.FileName);
+            await _session.ExportFlatCopy(_vm, dlg.FileName,
+                _settings.ExportCopyableDefault ? EnrichCopyableAsync : null);
         }
         catch (Exception ex)
         {
             _vm.Status = $"Export failed: {ex.Message}";
         }
+    }
+
+    /// <summary>
+    /// Export default: recognize every unmarked stroke so all handwriting
+    /// leaves the export copyable. Failures keep individual strokes as ink.
+    /// </summary>
+    private async Task<NoteDocument> EnrichCopyableAsync(NoteDocument model)
+    {
+        if (!_recognizer.IsAvailable)
+        {
+            _vm.Status = "Exporting without auto-copyable (no recognizer installed).";
+            await Task.Delay(1);
+            return model;
+        }
+        int marked = 0;
+        var pages = new List<NotePage>();
+        foreach (var page in model.Pages)
+        {
+            var targets = page.Strokes
+                .Where(s => s.Mode == InkHandleMode.Keep
+                    && s.Points.Count > 0
+                    && string.IsNullOrWhiteSpace(s.RecognizedText))
+                .ToList();
+            if (targets.Count == 0)
+            {
+                pages.Add(page);
+                continue;
+            }
+            var enriched = page.Strokes.ToDictionary(s => s.Id);
+            foreach (var line in InkLineGrouping.GroupByLines(targets))
+            {
+                string? text = null;
+                try
+                {
+                    text = await _recognizer.RecognizeAsync(line.ToList());
+                }
+                catch { /* keep as ink */ }
+                if (string.IsNullOrWhiteSpace(text))
+                    continue;
+                foreach (var stroke in line)
+                {
+                    enriched[stroke.Id] = stroke with
+                    {
+                        Mode = InkHandleMode.Copyable,
+                        RecognizedText = text,
+                    };
+                    marked++;
+                }
+            }
+            pages.Add(page with { Strokes = page.Strokes.Select(s => enriched[s.Id]).ToList() });
+        }
+        if (marked > 0)
+            _vm.Status = $"Exporting with {marked} auto-copyable stroke(s).";
+        return model with { Pages = pages };
     }
 
     private void SaveSafely(bool saveAs)
@@ -907,6 +1183,8 @@ public partial class MainWindow : Window
         try
         {
             _textSelections.Clear();
+            _focusedTextBox = null;
+            UpdateFontControls();
             _session.OpenDocument(path, _vm);
             _settings = _settings with { RecentFiles = Core.RecentFiles.Add(_settings.RecentFiles, path) };
             PersistSettings();
@@ -1033,20 +1311,11 @@ public partial class MainWindow : Window
 
     // ---------- misc ----------
 
-    /// <summary>Exe write time, so a stale build is identifiable from the status bar.</summary>
-    private static string BuildStamp()
+    /// <summary>App version (SemVer from the assembly) for title/status.</summary>
+    private static string AppVersion()
     {
-        try
-        {
-            string? path = Environment.ProcessPath;
-            if (string.IsNullOrEmpty(path))
-                return "dev";
-            return File.GetLastWriteTime(path).ToString("dd-MMM HH:mm");
-        }
-        catch
-        {
-            return "dev";
-        }
+        var version = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version;
+        return version is null ? "0.0.0" : $"{version.Major}.{version.Minor}.{version.Build}";
     }
 
     private void ToolBar_Loaded(object sender, RoutedEventArgs e)

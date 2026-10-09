@@ -19,6 +19,20 @@ namespace Scribbles.E2E.Tests;
 /// </summary>
 public sealed class OpenRealizeTests
 {
+    private static Func<int, List<TextBoxItem>> BoxesOf(MainViewModel vm) => page =>
+        vm.Pages.FirstOrDefault(p => p.Number == page)?.TextBoxes.Select(b => b.Clone()).ToList()
+        ?? new List<TextBoxItem>();
+
+    private static Action<int, List<TextBoxItem>> SetBoxesOf(MainViewModel vm) => (page, boxes) =>
+    {
+        var target = vm.Pages.FirstOrDefault(p => p.Number == page);
+        if (target is null)
+            return;
+        target.TextBoxes.Clear();
+        foreach (var box in boxes)
+            target.TextBoxes.Add(box);
+    };
+
     private static string WritePdf(byte[] bytes)
     {
         string path = Path.Combine(Path.GetTempPath(), Guid.NewGuid() + ".pdf");
@@ -55,10 +69,10 @@ public sealed class OpenRealizeTests
 
         var converter = new InkModelConverter();
         var inks = new List<InkCanvas>();
-        var session = new DocumentSession(
-            store, converter, new StrokeHistory(converter),
-            new PenToolbarController(), () => inks);
         var vm = new MainViewModel(Scribbles.App.App.Themes);
+        var session = new DocumentSession(
+            store, converter, new StrokeHistory(converter, BoxesOf(vm)), new PenToolbarController(),
+            () => inks, SetBoxesOf(vm));
 
         session.OpenDocument(path, vm);
         vm.Pages.Count.ShouldBe(1);

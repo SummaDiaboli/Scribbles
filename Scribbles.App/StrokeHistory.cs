@@ -5,18 +5,23 @@ using Scribbles.Core;
 
 namespace Scribbles.App;
 
-/// <summary>Per-page undo/redo over ISF snapshots, plus stroke-id bookkeeping.</summary>
+/// <summary>One undoable page state: ink snapshot plus text-box clones.</summary>
+internal sealed record PageState(byte[] Ink, List<TextBoxItem> Boxes);
+
+/// <summary>Per-page undo/redo over page states, plus stroke-id bookkeeping.</summary>
 internal sealed class StrokeHistory
 {
     private readonly InkModelConverter _converter;
-    private readonly Dictionary<int, UndoRedo<byte[]>> _histories = new();
-    private readonly Dictionary<int, byte[]> _lastStates = new();
+    private readonly Func<int, List<TextBoxItem>> _boxesFor;
+    private readonly Dictionary<int, UndoRedo<PageState>> _histories = new();
+    private readonly Dictionary<int, PageState> _lastStates = new();
 
     public bool Suspended { get; set; }
 
-    public StrokeHistory(InkModelConverter converter)
+    public StrokeHistory(InkModelConverter converter, Func<int, List<TextBoxItem>> boxesFor)
     {
         _converter = converter;
+        _boxesFor = boxesFor;
     }
 
     public void Clear()
@@ -26,7 +31,7 @@ internal sealed class StrokeHistory
     }
 
     public void Snapshot(int page, StrokeCollection strokes) =>
-        _lastStates[page] = Serialize(strokes);
+        _lastStates[page] = new PageState(Serialize(strokes), CloneBoxes(page));
 
     /// <summary>
     /// Records the pre-edit baseline for a freshly hooked canvas. Without
@@ -43,7 +48,7 @@ internal sealed class StrokeHistory
     {
         if (!_histories.TryGetValue(page, out var history))
         {
-            history = new UndoRedo<byte[]>();
+            history = new UndoRedo<PageState>();
             _histories[page] = history;
         }
         if (_lastStates.TryGetValue(page, out var last))
@@ -61,10 +66,10 @@ internal sealed class StrokeHistory
             // empty before this first change rather than making undo a no-op.
             if (!_histories.TryGetValue(page, out var fresh))
             {
-                fresh = new UndoRedo<byte[]>();
+                fresh = new UndoRedo<PageState>();
                 _histories[page] = fresh;
             }
-            fresh.Push(Serialize(new StrokeCollection()));
+            fresh.Push(new PageState(Serialize(new StrokeCollection()), new List<TextBoxItem>()));
         }
         Push(page, _ => current);
         foreach (var s in added)
@@ -73,11 +78,22 @@ internal sealed class StrokeHistory
             _converter.Forget(s);
     }
 
-    public bool TryUndo(int page, out byte[] prior, out byte[] current) =>
+    public bool TryUndo(int page, out PageState prior, out PageState current) =>
         TryStep(page, undo: true, out prior, out current);
 
-    public bool TryRedo(int page, out byte[] next, out byte[] current) =>
+    public bool TryRedo(int page, out PageState next, out PageState current) =>
         TryStep(page, undo: false, out next, out current);
+
+    private bool TryStep(int page, bool undo, out PageState state, out PageState current)
+    {
+        state = new PageState(Array.Empty<byte>(), new List<TextBoxItem>());
+        current = state;
+        if (!_histories.TryGetValue(page, out var history)
+            || !_lastStates.TryGetValue(page, out PageState? last))
+            return false;
+        current = last;
+        return undo ? history.TryUndo(current, out state) : history.TryRedo(current, out state);
+    }
 
     public bool CanUndo(int page) =>
         _histories.TryGetValue(page, out var history) && history.CanUndo;
@@ -85,18 +101,10 @@ internal sealed class StrokeHistory
     public bool CanRedo(int page) =>
         _histories.TryGetValue(page, out var history) && history.CanRedo;
 
-    private bool TryStep(int page, bool undo, out byte[] state, out byte[] current)
-    {
-        state = Array.Empty<byte>();
-        current = Array.Empty<byte>();
-        if (!_histories.TryGetValue(page, out var history)
-            || !_lastStates.TryGetValue(page, out byte[]? last))
-            return false;
-        current = last;
-        return undo ? history.TryUndo(current, out state) : history.TryRedo(current, out state);
-    }
-
     public IEnumerable<int> Pages => _histories.Keys;
+
+    private List<TextBoxItem> CloneBoxes(int page) =>
+        _boxesFor(page).Select(b => b.Clone()).ToList();
 
     private static byte[] Serialize(StrokeCollection strokes)
     {

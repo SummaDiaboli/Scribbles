@@ -47,10 +47,13 @@
                     <Separator/>
                     <MenuItem Header="_Copy text selection" Command="{Binding CopyTextCommand}" InputGestureText="Ctrl+C"/>
                     <MenuItem Header="_Delete selection" Command="{Binding DeleteSelectionCommand}" InputGestureText="Del"/>
+                    <Separator/>
+                    <MenuItem Header="Convert all ink on _page to text" Click="ConvertPage_Click"/>
+                    <MenuItem Header="Make all ink on page _copyable" Click="CopyablePage_Click"/>
                 </MenuItem>
         </Menu>
 
-        <Border DockPanel.Dock="Top" Background="{DynamicResource AppSurface}" BorderBrush="{DynamicResource AppBorder}" BorderThickness="0,0,0,1">
+        <Border DockPanel.Dock="Top" Background="{DynamicResource AppSurface}" BorderBrush="{DynamicResource AppBorder}" BorderThickness="1" CornerRadius="10" Margin="8,8,8,4" Padding="4,2">
             <ToolBar Background="Transparent" Foreground="{DynamicResource AppForeground}" Loaded="ToolBar_Loaded">
                     <Button Command="{Binding OpenPdfCommand}" ToolTip="Open PDF (Ctrl+O)" Style="{StaticResource IconButton}">
                         <Image Source="{StaticResource IconFolderOpen}" Width="18" Height="18"/>
@@ -101,7 +104,7 @@
                     </Button>
                     <Separator/>
                     <StackPanel x:Name="PalettePanel" Orientation="Horizontal" VerticalAlignment="Center"/>
-                    <Button ToolTip="Custom color…" Style="{StaticResource IconButton}" Click="Picker_Click">
+                    <Button ToolTip="Custom color… (applies to focused text box, else the pen)" Style="{StaticResource IconButton}" Click="Picker_Click">
                         <Image Source="{StaticResource IconPalette}" Width="18" Height="18"/>
                     </Button>
                     <ComboBox x:Name="FamilyBox" Width="92" VerticalAlignment="Center" ToolTip="Pen stroke" SelectionChanged="FamilyBox_SelectionChanged">
@@ -114,13 +117,30 @@
                         <ComboBoxItem Content="L" Tag="5"/>
                     </ComboBox>
                     <Separator/>
+                    <Button x:Name="FontColorButton" ToolTip="Font color of the focused text box" Style="{StaticResource IconButton}" Click="FontColor_Click" IsEnabled="False">
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                            <TextBlock x:Name="FontColorGlyph" Text="A" FontWeight="Bold" FontSize="16" VerticalAlignment="Center"/>
+                            <Rectangle x:Name="FontColorSwatch" Width="14" Height="4" Margin="2,0,0,0" VerticalAlignment="Bottom"/>
+                        </StackPanel>
+                    </Button>
+                    <ComboBox x:Name="FontSizeBox" Width="60" VerticalAlignment="Center" IsEditable="True" ToolTip="Font size of the focused text box" SelectionChanged="FontSizeBox_SelectionChanged" IsEnabled="False">
+                        <ComboBoxItem Content="8" Tag="8"/>
+                        <ComboBoxItem Content="10" Tag="10"/>
+                        <ComboBoxItem Content="12" Tag="12"/>
+                        <ComboBoxItem Content="14" Tag="14"/>
+                        <ComboBoxItem Content="18" Tag="18"/>
+                        <ComboBoxItem Content="24" Tag="24"/>
+                        <ComboBoxItem Content="32" Tag="32"/>
+                        <ComboBoxItem Content="48" Tag="48"/>
+                    </ComboBox>
+                    <Separator/>
                     <Button x:Name="UndoButton" ToolTip="Undo (Ctrl+Z)" Style="{StaticResource IconButton}" Click="Undo_Click" IsEnabled="False">
                         <Image Source="{StaticResource IconUndo}" Width="18" Height="18"/>
                     </Button>
                     <Button x:Name="RedoButton" ToolTip="Redo (Ctrl+Y)" Style="{StaticResource IconButton}" Click="Redo_Click" IsEnabled="False">
                         <Image Source="{StaticResource IconRedo}" Width="18" Height="18"/>
                     </Button>
-                    <Button ToolTip="Delete selection (Del)" Style="{StaticResource IconButton}" Click="DeleteSelection_Click">
+                    <Button ToolTip="Delete selection / focused text box (Del, Ctrl+Del in box)" Style="{StaticResource IconButton}" Click="DeleteSelection_Click">
                         <Image Source="{StaticResource IconTrash}" Width="18" Height="18"/>
                     </Button>
             </ToolBar>
@@ -181,16 +201,16 @@
                                     <ItemsControl.ItemTemplate>
                                         <DataTemplate>
                                             <DataTemplate.Resources>
-                                                <Style TargetType="TextBox">
+                                                <Style TargetType="TextBox" BasedOn="{StaticResource OverlayTextBox}">
                                                     <EventSetter Event="TextChanged" Handler="TextBoxEdited"/>
+                                                    <EventSetter Event="GotKeyboardFocus" Handler="TextBoxFocused"/>
+                                                    <EventSetter Event="PreviewKeyDown" Handler="TextBoxPreviewKeyDown"/>
                                                 </Style>
                                             </DataTemplate.Resources>
                                             <TextBox Text="{Binding Text, UpdateSourceTrigger=PropertyChanged}"
                                                      Width="{Binding DisplayWidth}" Height="{Binding DisplayHeight}"
                                                      FontSize="{Binding DisplayFontSize}"
                                                      Foreground="{Binding ColorArgb, Converter={StaticResource ArgbToBrush}}"
-                                                     Background="{DynamicResource AppSurface}"
-                                                     BorderBrush="{DynamicResource AppBorder}"
                                                      AcceptsReturn="True" TextWrapping="Wrap"/>
                                         </DataTemplate>
                                     </ItemsControl.ItemTemplate>
