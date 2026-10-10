@@ -340,6 +340,10 @@ internal sealed class DocumentSession
                 _stash[group.Key] = group.ToList();
             vm.Status = $"{loaded.Pages.Count} page(s). PDF was changed by another tool — ink imported (pressure approximate).";
         }
+        else
+        {
+            vm.Status = $"{loaded.Pages.Count} page(s).";
+        }
         SyncContainers();
 
         CurrentPath = path;

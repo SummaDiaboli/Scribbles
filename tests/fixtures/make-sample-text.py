@@ -18,7 +18,9 @@ LINES = [
 
 
 def build() -> bytes:
-    ops = ["BT /F1 14 Tf"]
+    # White page background first (otherwise viewers show the bare canvas),
+    # then back to black for the text (fill color carries into BT...ET).
+    ops = ["1 1 1 rg", "0 0 595 842 re", "f", "0 0 0 rg", "BT /F1 14 Tf"]
     ops.append(f"{LINES[0][0]} {LINES[0][1]} Td")
     prev_y = LINES[0][1]
     for i, (x, y, text) in enumerate(LINES):

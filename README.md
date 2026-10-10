@@ -10,6 +10,9 @@ Grab `Scribbles-win-Setup.exe` from the [Releases page](https://github.com/Summa
 
 Requires Windows 10 (build 19041) or later. Works with a mouse; a pen gives you pressure-sensitive ink, and a touchscreen adds finger scrolling and pinch-zoom. The installer fetches the .NET 8 Desktop Runtime automatically if it's missing.
 
+![Home grid with document thumbnails](docs/screenshots/home.png)
+![Viewer with pen toolbar and page sidebar](docs/screenshots/viewer.png)
+
 ## Features
 
 **Inking**
