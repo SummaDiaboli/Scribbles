@@ -1311,7 +1311,7 @@ public partial class MainWindow : Window
             RefreshRecentMenu();
             int restorePage = RecentPages.ForPath(_settings.LastPages, path);
             // Containers materialize async: re-apply overlay visibility after layout.
-            Dispatcher.BeginInvoke(
+            _ = Dispatcher.BeginInvoke(
                 System.Windows.Threading.DispatcherPriority.Loaded,
                 new Action(() =>
                 {

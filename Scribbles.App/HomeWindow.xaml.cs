@@ -118,7 +118,7 @@ public partial class HomeWindow : Window
         await Task.WhenAll(dataTask, rasterTask).ConfigureAwait(false);
         var (size, strokes) = await dataTask.ConfigureAwait(false);
         var thumb = await rasterTask.ConfigureAwait(false);
-        Dispatcher.BeginInvoke(() => card.Thumbnail = thumb is null
+        _ = Dispatcher.BeginInvoke(() => card.Thumbnail = thumb is null
             ? null
             : InkThumbnailComposer.Compose(thumb, size.W, size.H, strokes));
     }

@@ -38,6 +38,22 @@ public sealed class VisualProofTests
         throw new FileNotFoundException("Published Scribbles.App.exe not found. Publish first.");
     }
 
+    private static string FindFixture()
+    {
+        // A document argument opens the viewer (no args lands on home).
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        for (int i = 0; i < 8 && dir is not null; i++, dir = dir.Parent)
+        {
+            string candidate = Path.Combine(dir.FullName, "tests", "fixtures", "sample-text.pdf");
+            if (File.Exists(candidate))
+                return candidate;
+            candidate = Path.Combine(dir.FullName, "fixtures", "sample-text.pdf");
+            if (File.Exists(candidate))
+                return candidate;
+        }
+        throw new FileNotFoundException("sample-text.pdf fixture not found.");
+    }
+
     private static void KillStale()
     {
         foreach (var stale in System.Diagnostics.Process.GetProcessesByName("Scribbles.App"))
@@ -82,7 +98,7 @@ public sealed class VisualProofTests
         if (!InteractiveEnabled())
             return; // needs a dedicated desktop: drives mouse + focus (see ci.yml)
         KillStale();
-        using var app = Application.Launch(FindExe());
+        using var app = Application.Launch(FindExe(), FindFixture());
         try
         {
             using var automation = new UIA3Automation();
@@ -115,7 +131,7 @@ public sealed class VisualProofTests
         if (!InteractiveEnabled())
             return; // needs a dedicated desktop: drives mouse + focus (see ci.yml)
         KillStale();
-        using var app = Application.Launch(FindExe());
+        using var app = Application.Launch(FindExe(), FindFixture());
         try
         {
             using var automation = new UIA3Automation();

@@ -106,7 +106,7 @@
                     </Button>
                     <Separator/>
                     <StackPanel x:Name="PalettePanel" Orientation="Horizontal" VerticalAlignment="Center"/>
-                    <Button ToolTip="Custom color… (applies to focused text box, else the pen)" Style="{StaticResource IconButton}" Click="Picker_Click">
+                    <Button ToolTip="Custom color… (applies to focused text box, else the pen)" AutomationProperties.Name="Custom color…" Style="{StaticResource IconButton}" Click="Picker_Click">
                         <Image Source="{StaticResource IconPalette}" Width="18" Height="18"/>
                     </Button>
                     <ComboBox x:Name="FamilyBox" Width="92" VerticalAlignment="Center" ToolTip="Pen stroke" SelectionChanged="FamilyBox_SelectionChanged">
