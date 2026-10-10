@@ -1,6 +1,6 @@
 # Scribbles
 
-A pen-first annotator for Windows tablets, inspired by Samsung Notes. Write on PDFs, slides and blank notebooks with a stylus, then choose what happens to your handwriting: keep it as ink, convert it to editable text, or keep the ink and make it **copyable** in the exported PDF.
+A Samsung Notes-style annotator for Windows PCs, laptops and tablets. Write on PDFs, slides and blank notebooks with a pen, mouse or touch, then choose what happens to your handwriting: keep it as ink, convert it to editable text, or keep the ink and make it **copyable** in the exported PDF.
 
 Built natively in C# / WPF for low pen latency and offline Windows handwriting recognition. Every dependency is free and open source.
 
@@ -37,7 +37,7 @@ Recognition uses Windows' built-in `InkRecognizerContainer`. It works offline wi
 
 ## Requirements
 
-- Windows 10 (build 19041) or later. A pen-capable device is recommended, but a mouse works too
+- Windows 10 (build 19041) or later. Works with a mouse; a pen gives you pressure-sensitive ink, and a touchscreen adds finger scrolling and pinch-zoom
 - [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8.0)
 - Optional: a Windows handwriting language pack (for recognition), and PowerPoint or LibreOffice (for slide import)
 
