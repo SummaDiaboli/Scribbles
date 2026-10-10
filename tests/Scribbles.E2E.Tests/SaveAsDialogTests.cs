@@ -12,6 +12,7 @@ namespace Scribbles.E2E.Tests;
 /// silently overwrite the original (regression: the CurrentPath fallback
 /// defeated Save As and overwrote the source file).
 /// </summary>
+[Collection(DesktopCollection.Name)]
 public sealed class SaveAsDialogTests
 {
     [DllImport("user32.dll", CharSet = CharSet.Unicode)]

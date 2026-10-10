@@ -7,6 +7,7 @@ using Shouldly;
 namespace Scribbles.E2E.Tests;
 
 /// <summary>First real E2E: the app opens and File → Settings shows the dialog.</summary>
+[Collection(DesktopCollection.Name)]
 public sealed class SettingsDialogTests
 {
     private static string FindExe()
@@ -74,7 +75,7 @@ public sealed class SettingsDialogTests
             if (dialog is null)
             {
                 var tree = string.Join(" | ", window.FindAllDescendants().Take(60)
-                    .Select(e => $"{e.ControlType}:{e.Name}"));
+                    .Select(e => $"{e.Properties.ControlType.ValueOrDefault}:{e.Properties.Name.ValueOrDefault}"));
                 throw new Xunit.Sdk.XunitException("Settings dialog should open. Tree: " + tree);
             }
             dialog!.Close();

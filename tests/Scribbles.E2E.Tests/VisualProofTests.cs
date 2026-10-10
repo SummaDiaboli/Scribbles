@@ -13,6 +13,7 @@ namespace Scribbles.E2E.Tests;
 /// and clicking OK after a sea-drag (mouse-capture trap regression).
 /// Screenshots land in %TEMP%\opencode.
 /// </summary>
+[Collection(DesktopCollection.Name)]
 public sealed class VisualProofTests
 {
     private static string ShotDir()
@@ -152,7 +153,7 @@ public sealed class VisualProofTests
             if (sea is null)
             {
                 var tree = string.Join(" | ", dialog.FindAllDescendants().Take(60)
-                    .Select(e => $"{e.ControlType}:{e.Name}[{e.AutomationId}]"));
+                    .Select(e => $"{e.Properties.ControlType.ValueOrDefault}:{e.Properties.Name.ValueOrDefault}[{e.Properties.AutomationId.ValueOrDefault}]"));
                 throw new Xunit.Sdk.XunitException("SV sea should be automatable. Tree: " + tree);
             }
             var r = sea!.BoundingRectangle;
