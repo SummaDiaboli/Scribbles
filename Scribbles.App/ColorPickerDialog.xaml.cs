@@ -1,4 +1,5 @@
 using System.Windows;
+using System.Windows.Automation.Peers;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
@@ -31,6 +32,9 @@ public partial class ColorPickerDialog : Window
     }
 
     // ---------- color sea ----------
+
+    // Exact delegate signature: XAML binds handlers on local types by reflection.
+    private void SvField_Down(object sender, MouseButtonEventArgs e) => SvField_Press(sender, e);
 
     private void SvField_Press(object sender, MouseEventArgs e)
     {
@@ -150,4 +154,11 @@ public partial class ColorPickerDialog : Window
     }
 
     private void Ok_Click(object sender, RoutedEventArgs e) => DialogResult = true;
+}
+
+/// <summary>Grid that appears in UI Automation (plain panels have no peer,
+/// so their AutomationId never reaches UIA).</summary>
+public sealed class AutomatableGrid : Grid
+{
+    protected override AutomationPeer OnCreateAutomationPeer() => new FrameworkElementAutomationPeer(this);
 }

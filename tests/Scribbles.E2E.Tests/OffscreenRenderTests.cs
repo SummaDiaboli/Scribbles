@@ -1,4 +1,5 @@
 using System.Windows;
+using System.Windows.Automation.Peers;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Media;
@@ -105,6 +106,22 @@ public sealed class OffscreenRenderTests
         open.ApplyTemplate();
         file.Template.FindName("Dropdown", file).ShouldNotBeNull("File should use the top-level template");
         open.Template.FindName("Submenu", open).ShouldNotBeNull("Open should use the submenu template");
+    });
+
+    [Fact]
+    public void ColorPicker_SeaIsVisibleToUiAutomation() => Sta(() =>
+    {
+        EnsureThemedApp("Dark");
+
+        // Plain panels have no automation peer, so an AutomationId on a bare
+        // Grid never reaches UIA (the interactive drag test could not find it).
+        var dialog = new Scribbles.App.ColorPickerDialog(Colors.Red, new[] { "#FFFF0000" });
+        var sea = (FrameworkElement)dialog.FindName("SvField");
+        var peer = UIElementAutomationPeer.CreatePeerForElement(sea);
+
+        peer.ShouldNotBeNull("color sea needs an automation peer");
+        peer.GetAutomationId().ShouldBe("SvField");
+        peer.GetName().ShouldNotBeNullOrWhiteSpace("color sea needs an accessible name");
     });
 
     [Fact]
