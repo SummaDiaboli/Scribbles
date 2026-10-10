@@ -38,32 +38,41 @@ public sealed class AppUpdater
         return (new GithubSource(RepoUrl, null, false), new UpdateOptions());
     }
 
-    public async Task<UpdateInfo?> CheckAsync(string channel)
+    public async Task<UpdateInfo?> CheckAsync(string channel, Action<string>? log = null)
     {
         try
         {
             var (source, options) = ForChannel(channel);
             var mgr = new UpdateManager(source, options);
-            return await mgr.CheckForUpdatesAsync().ConfigureAwait(false);
+            log?.Invoke($"check start (installed={mgr.IsInstalled})");
+            var update = await mgr.CheckForUpdatesAsync().ConfigureAwait(false);
+            log?.Invoke(update is null
+                ? "check done: up to date"
+                : $"check done: {update.TargetFullRelease.Version} available");
+            return update;
         }
-        catch
+        catch (Exception ex)
         {
             // Not installed (dev builds), offline, or feed unreachable.
+            log?.Invoke($"check failed: {ex.GetType().Name}: {ex.Message}");
             return null;
         }
     }
 
-    public async Task<bool> DownloadAsync(UpdateInfo update, string channel)
+    public async Task<bool> DownloadAsync(UpdateInfo update, string channel, Action<string>? log = null)
     {
         try
         {
             var (source, options) = ForChannel(channel);
             var mgr = new UpdateManager(source, options);
+            log?.Invoke($"download start: {update.TargetFullRelease.Version}");
             await mgr.DownloadUpdatesAsync(update).ConfigureAwait(false);
+            log?.Invoke("download done");
             return true;
         }
-        catch
+        catch (Exception ex)
         {
+            log?.Invoke($"download failed: {ex.GetType().Name}: {ex.Message}");
             return false;
         }
     }

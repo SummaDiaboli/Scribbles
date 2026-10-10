@@ -74,7 +74,12 @@ public partial class MainWindow : Window
 
         bool closing = false;
         App.UpdateStaged += OnUpdateStaged;
-        Closed += (_, _) => App.UpdateStaged -= OnUpdateStaged;
+        App.UpdateCheckedEmpty += OnUpdateCheckedEmpty;
+        Closed += (_, _) =>
+        {
+            App.UpdateStaged -= OnUpdateStaged;
+            App.UpdateCheckedEmpty -= OnUpdateCheckedEmpty;
+        };
 
         Closing += async (_, e) =>
         {
@@ -188,7 +193,10 @@ public partial class MainWindow : Window
         UpdateUndoRedoState();
         RefreshRecentMenu();
         RefreshRecoverMenu();
-        OnUpdateStaged();
+        if (App.UpdateCheckResolved && App.PendingUpdate is null)
+            OnUpdateCheckedEmpty();
+        else
+            OnUpdateStaged();
         CheckForAutosave();
     }
 
@@ -1557,9 +1565,18 @@ public partial class MainWindow : Window
     {
         if (App.PendingUpdate is null)
             return;
+        RestartUpdateItem.Header = "_Restart to apply update";
         RestartUpdateItem.Visibility = Visibility.Visible;
         RestartUpdateItem.IsEnabled = true;
         _vm.Status = $"Update {App.PendingUpdate.TargetFullRelease.Version} downloaded — restart to apply.";
+    }
+
+    /// <summary>Hides the checking item when the check finds nothing.</summary>
+    private void OnUpdateCheckedEmpty()
+    {
+        if (App.PendingUpdate is not null)
+            return;
+        RestartUpdateItem.Visibility = Visibility.Collapsed;
     }
 
     private async void RestartUpdate_Click(object sender, RoutedEventArgs e)

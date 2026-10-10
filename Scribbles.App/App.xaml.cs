@@ -18,8 +18,14 @@ public partial class App : Application
     /// <summary>Downloaded update waiting for a restart (null when up to date).</summary>
     public static Velopack.UpdateInfo? PendingUpdate { get; private set; }
 
+    /// <summary>True once the background check has resolved either way.</summary>
+    public static bool UpdateCheckResolved { get; private set; }
+
     /// <summary>Raised on the UI thread when an update finishes downloading.</summary>
     public static event Action? UpdateStaged;
+
+    /// <summary>Raised on the UI thread when a check completes with no update.</summary>
+    public static event Action? UpdateCheckedEmpty;
 
     [STAThread]
     private static void Main(string[] args)
@@ -84,23 +90,47 @@ public partial class App : Application
     /// <summary>
     /// Silent background update: check, download, then stage for restart.
     /// Dev builds (not installed) and offline machines skip without a sound.
+    /// Every step is logged to %LocalAppData%\Scribbles\updates.log.
     /// </summary>
     private static async void CheckForUpdatesInBackground()
     {
         try
         {
             await Task.Delay(TimeSpan.FromSeconds(5)).ConfigureAwait(false);
-            var update = await Updater.CheckAsync(Settings.UpdateChannel).ConfigureAwait(false);
+            LogUpdate($"launch v{Scribbles.App.MainWindow.AppVersion()} channel={UpdateChannels.Normalize(Settings.UpdateChannel)}");
+            var update = await Updater.CheckAsync(Settings.UpdateChannel, LogUpdate).ConfigureAwait(false);
             if (update is null)
+            {
+                UpdateCheckResolved = true;
+                await Current.Dispatcher.InvokeAsync(() => UpdateCheckedEmpty?.Invoke());
                 return;
-            if (!await Updater.DownloadAsync(update, Settings.UpdateChannel).ConfigureAwait(false))
+            }
+            if (!await Updater.DownloadAsync(update, Settings.UpdateChannel, LogUpdate).ConfigureAwait(false))
                 return;
             PendingUpdate = update;
+            LogUpdate($"staged {update.TargetFullRelease.Version}, waiting for restart");
             await Current.Dispatcher.InvokeAsync(() => UpdateStaged?.Invoke());
+        }
+        catch (Exception ex)
+        {
+            LogUpdate($"background check failed: {ex.GetType().Name}: {ex.Message}");
+        }
+    }
+
+    private static void LogUpdate(string message)
+    {
+        try
+        {
+            string dir = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "Scribbles");
+            Directory.CreateDirectory(dir);
+            File.AppendAllText(Path.Combine(dir, "updates.log"),
+                $"[{DateTime.Now:o}] {message}\n");
         }
         catch
         {
-            // Update checks must never disturb the app.
+            // Diagnostics must never disturb the app.
         }
     }
 
