@@ -6,7 +6,7 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWPF>true</UseWPF>
-    <Version>0.6.3</Version>
+    <Version>0.6.4</Version>
     <!-- Velopack bootstrap runs before any WPF overhead: App.xaml is a Page,
          StartupObject points at the custom Main in App.xaml.cs. -->
     <StartupObject>Scribbles.App.App</StartupObject>
