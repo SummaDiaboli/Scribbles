@@ -23,7 +23,9 @@ public sealed class PageRenderQueue : IDisposable
 
     private byte[] _bytes = Array.Empty<byte>();
     private int _generation;
+    private string? _docKey;
     private Docnet.Core.Readers.IDocReader? _reader;
+    private readonly PageRasterCache _cache = new();
 
     private sealed record RenderRequest(int Generation, int PageNumber1, Action<int, BitmapSource> Done);
 
@@ -45,6 +47,7 @@ public sealed class PageRenderQueue : IDisposable
             _reader?.Dispose();
             _reader = null;
             _bytes = pdfBytes;
+            _docKey = null; // recomputed lazily on the worker (hashing is not UI work)
             _generation++;
             _pending.Clear();
             while (_stack.TryPop(out _)) { }
@@ -95,18 +98,33 @@ public sealed class PageRenderQueue : IDisposable
     private void Render(RenderRequest request)
     {
         Docnet.Core.Readers.IDocReader? reader;
+        string? docKey;
         lock (_gate)
         {
             if (request.Generation != _generation || _bytes.Length == 0)
                 return;
             _reader ??= DocLib.Instance.GetDocReader(_bytes, new PageDimensions(1080 * 2, 1080 * 2));
             reader = _reader;
+            // Hash once per document, on the worker — never on the UI thread.
+            _docKey ??= Scribbles.Core.NoteSerializer.Sha256Hex(_bytes);
+            docKey = _docKey;
         }
         if (reader is null)
             return;
         int index0 = request.PageNumber1 - 1;
         if (index0 < 0 || index0 >= reader.GetPageCount())
             return;
+        // Disk cache first: reopening a document reuses rasters.
+        if (docKey is not null && _cache.TryGet(docKey, request.PageNumber1) is { } cached)
+        {
+            lock (_gate)
+            {
+                if (request.Generation != _generation)
+                    return;
+            }
+            request.Done(request.PageNumber1, cached);
+            return;
+        }
         // Native calls stay serialized process-wide (home thumbs, text refresh
         // share PDFium). Sync wait is correct: this is the worker thread.
         PdfiumGate.Instance.Wait();
@@ -134,6 +152,8 @@ public sealed class PageRenderQueue : IDisposable
             if (request.Generation != _generation)
                 return; // document switched mid-render: drop it
         }
+        if (docKey is not null)
+            _cache.Put(docKey, request.PageNumber1, bitmap);
         request.Done(request.PageNumber1, bitmap);
     }
 

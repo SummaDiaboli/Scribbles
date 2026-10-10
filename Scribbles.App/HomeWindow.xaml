@@ -9,6 +9,19 @@
                 <Button Content="New notebook" Padding="14,6" Margin="0,0,8,0" Click="NewNotebook_Click"/>
                 <Button Content="Open PDF…" Padding="14,6" Margin="0,0,8,0" Click="OpenPdf_Click"/>
                 <Button Content="Import slides…" Padding="14,6" Click="ImportSlides_Click"/>
+                <TextBox x:Name="SearchBox" Width="160" Margin="16,0,0,0" VerticalAlignment="Center" Padding="6,4"
+                         ToolTip="Filter by name" TextChanged="SearchBox_TextChanged"/>
+                <ComboBox x:Name="SortBox" Width="96" Margin="8,0,0,0" VerticalAlignment="Center" ToolTip="Sort order"
+                          SelectionChanged="SortBox_SelectionChanged">
+                    <ComboBoxItem Content="Newest" IsSelected="True"/>
+                    <ComboBoxItem Content="Name"/>
+                </ComboBox>
+                <ComboBox x:Name="KindBox" Width="96" Margin="8,0,0,0" VerticalAlignment="Center" ToolTip="Document kind"
+                          SelectionChanged="KindBox_SelectionChanged">
+                    <ComboBoxItem Content="All" IsSelected="True"/>
+                    <ComboBoxItem Content="Notebooks"/>
+                    <ComboBoxItem Content="PDFs"/>
+                </ComboBox>
                 <TextBlock x:Name="StatusText" VerticalAlignment="Center" Margin="16,0,0,0" TextWrapping="Wrap"/>
             </StackPanel>
         </Border>

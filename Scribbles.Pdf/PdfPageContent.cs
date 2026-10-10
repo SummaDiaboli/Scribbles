@@ -3,10 +3,11 @@ using Scribbles.Core;
 
 namespace Scribbles.Pdf;
 
-/// <summary>One PdfPig open yielding both page sizes and text words.</summary>
+/// <summary>One PdfPig open yielding sizes, text words, and bookmarks.</summary>
 public sealed record PdfPageContent(
     IReadOnlyList<PdfPageSize> Sizes,
-    IReadOnlyList<IReadOnlyList<PdfWord>> Words);
+    IReadOnlyList<IReadOnlyList<PdfWord>> Words,
+    IReadOnlyList<PdfBookmark> Bookmarks);
 
 /// <summary>
 /// Single-open page read: sizes + words in one <c>PdfDocument.Open</c>.
@@ -18,6 +19,7 @@ public static class PdfPageContentReader
     {
         var sizes = new List<PdfPageSize>();
         var words = new List<IReadOnlyList<PdfWord>>();
+        var bookmarks = new List<PdfBookmark>();
         try
         {
             using var document = PdfDocument.Open(pdfBytes);
@@ -29,12 +31,36 @@ public static class PdfPageContentReader
                     pageWords = ExtractFromLetters(page);
                 words.Add(pageWords);
             }
+            if (document.TryGetBookmarks(out var outline) && outline?.Roots is not null)
+            {
+                foreach (var root in outline.Roots)
+                {
+                    var mapped = MapBookmark(root);
+                    if (mapped is not null)
+                        bookmarks.Add(mapped);
+                }
+            }
         }
         catch
         {
             // Encrypted or unreadable: empty content.
         }
-        return new PdfPageContent(sizes, words);
+        return new PdfPageContent(sizes, words, bookmarks);
+    }
+
+    /// <summary>Document bookmarks map to pages; external/embedded ones are skipped.</summary>
+    private static PdfBookmark? MapBookmark(UglyToad.PdfPig.Outline.BookmarkNode node)
+    {
+        var children = new List<PdfBookmark>();
+        foreach (var child in node.Children)
+        {
+            var mapped = MapBookmark(child);
+            if (mapped is not null)
+                children.Add(mapped);
+        }
+        if (node is UglyToad.PdfPig.Outline.DocumentBookmarkNode doc)
+            return new PdfBookmark(doc.Title, doc.PageNumber, children);
+        return children.Count > 0 ? new PdfBookmark(node.Title, children[0].PageNumber, children) : null;
     }
 
     private static List<PdfWord> ExtractWords(UglyToad.PdfPig.Content.Page page)

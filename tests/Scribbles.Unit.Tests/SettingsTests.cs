@@ -148,6 +148,19 @@ public sealed class SettingsTests
     }
 
     [Fact]
+    public void PenProfile_FountainAndBallpoint_DifferOnlyInPressure()
+    {
+        // Locked answer to "do these even differ": pressure handling is the
+        // whole distinction (identical rendering with a pressure-less mouse).
+        var ballpoint = PenProfile.Plan(PenKind.Ballpoint);
+        var fountain = PenProfile.Plan(PenKind.Fountain);
+        ballpoint.ShouldNotBe(fountain);
+        ballpoint.IgnorePressure.ShouldBeTrue();
+        fountain.IgnorePressure.ShouldBeFalse();
+        (ballpoint with { IgnorePressure = false }).ShouldBe(fountain);
+    }
+
+    [Fact]
     public void PenProfile_Highlighter_IsTranslucentRectangle()
     {
         var spec = PenProfile.Plan(PenKind.Highlighter);

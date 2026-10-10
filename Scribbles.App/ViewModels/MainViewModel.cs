@@ -95,6 +95,16 @@ public sealed partial class MainViewModel : ObservableObject
     [RelayCommand]
     private void OpenPdf() => RequestOpen?.Invoke(this, EventArgs.Empty);
 
+    /// <summary>Raised when Find is requested. Handled by the view (find dialog).</summary>
+    public event EventHandler? RequestFind;
+
+    [RelayCommand]
+    private void Find() => RequestFind?.Invoke(this, EventArgs.Empty);
+
+    /// <summary>Document outline (bookmarks); empty when the PDF has none.</summary>
+    [ObservableProperty]
+    private IReadOnlyList<Core.PdfBookmark> _outline = Array.Empty<Core.PdfBookmark>();
+
     /// <summary>Raised when Open is requested. Handled by the view (round-trip rebuild).</summary>
     public event EventHandler? RequestOpen;
 
@@ -111,6 +121,7 @@ public sealed partial class MainViewModel : ObservableObject
             var content = await Task.Run(() => Pdf.PdfPageContentReader.Read(bytes)).ConfigureAwait(true);
             var sizes = content.Sizes;
             var words = content.Words;
+            Outline = content.Bookmarks;
             Pages.Clear();
             for (int i = 0; i < sizes.Count; i++)
             {

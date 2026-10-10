@@ -13,6 +13,7 @@
         <KeyBinding Key="Y" Modifiers="Ctrl" Command="{Binding RedoCommand}"/>
         <KeyBinding Key="Delete" Command="{Binding DeleteSelectionCommand}"/>
         <KeyBinding Key="C" Modifiers="Ctrl" Command="{Binding CopyTextCommand}"/>
+        <KeyBinding Key="F" Modifiers="Ctrl" Command="{Binding FindCommand}"/>
     </Window.InputBindings>
     <Window.Resources>
     </Window.Resources>
@@ -109,14 +110,16 @@
                     <Button ToolTip="Custom color… (applies to focused text box, else the pen)" AutomationProperties.Name="Custom color…" Style="{StaticResource IconButton}" Click="Picker_Click">
                         <Image Source="{StaticResource IconPalette}" Width="18" Height="18"/>
                     </Button>
-                    <ComboBox x:Name="FamilyBox" Width="92" VerticalAlignment="Center" ToolTip="Pen stroke" SelectionChanged="FamilyBox_SelectionChanged">
+                    <ComboBox x:Name="FamilyBox" Width="92" VerticalAlignment="Center" ToolTip="Ballpoint: fixed width. Fountain: pressure-sensitive (needs a pen)" SelectionChanged="FamilyBox_SelectionChanged">
                         <ComboBoxItem Content="Ballpoint" Tag="Ballpoint"/>
                         <ComboBoxItem Content="Fountain" Tag="Fountain" IsSelected="True"/>
                     </ComboBox>
                     <ComboBox x:Name="SizeBox" Width="60" VerticalAlignment="Center" IsEditable="True" ToolTip="Thickness in pt (1–20)" SelectionChanged="SizeBox_SelectionChanged">
+                        <ComboBoxItem Content="XS" Tag="1"/>
                         <ComboBoxItem Content="S" Tag="2"/>
                         <ComboBoxItem Content="M" Tag="3.5" IsSelected="True"/>
                         <ComboBoxItem Content="L" Tag="5"/>
+                        <ComboBoxItem Content="XL" Tag="8"/>
                     </ComboBox>
                     <Separator/>
                     <Button x:Name="FontColorButton" ToolTip="Font color of the focused text box" Style="{StaticResource IconButton}" Click="FontColor_Click" IsEnabled="False">
@@ -170,7 +173,23 @@
                         <Button x:Name="SidebarToggle" Content="«" Width="24" Height="24" Padding="0"
                                 ToolTip="Collapse sidebar" Click="SidebarToggle_Click"/>
                         <TextBlock x:Name="SidebarTitle" Text="Pages" VerticalAlignment="Center" Margin="8,0,0,0" FontWeight="SemiBold"/>
+                        <Button x:Name="OutlineToggle" Content="☰" Width="24" Height="24" Padding="0" Margin="4,0,0,0"
+                                ToolTip="Toggle thumbnails / bookmarks" Click="OutlineToggle_Click"/>
                     </StackPanel>
+                    <TreeView x:Name="OutlineTree" Visibility="Collapsed" Margin="4,0,4,8"
+                              ItemsSource="{Binding Outline}" BorderThickness="0"
+                              Background="Transparent" Foreground="{DynamicResource AppForeground}">
+                        <TreeView.ItemTemplate>
+                            <HierarchicalDataTemplate ItemsSource="{Binding Children}">
+                                <TextBlock Text="{Binding Title}" ToolTip="Go to bookmark"/>
+                            </HierarchicalDataTemplate>
+                        </TreeView.ItemTemplate>
+                        <TreeView.ItemContainerStyle>
+                            <Style TargetType="TreeViewItem">
+                                <EventSetter Event="MouseLeftButtonUp" Handler="Outline_Jump"/>
+                            </Style>
+                        </TreeView.ItemContainerStyle>
+                    </TreeView>
                     <ScrollViewer x:Name="ThumbScroll" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                         <ItemsControl x:Name="ThumbList" ItemsSource="{Binding Pages}">
                             <ItemsControl.ItemTemplate>

@@ -327,29 +327,11 @@ internal sealed class DocumentSession
         _copyMeta.Clear();
         if (IsDegraded || loaded is null)
         {
-            vm.Status = $"{vm.Pages.Count} page(s). This PDF's structure is unreadable — ink stays for this session only (saving disabled).";
+            SeedFromSidecar(vm, path, bytes);
         }
         else if (loaded is { HashesMatch: true, Model: not null })
         {
-            foreach (var page in loaded.Model.Pages)
-            {
-                _stash[page.Number] = page.Strokes.ToList();
-                foreach (var stroke in page.Strokes)
-                {
-                    if (stroke.Mode != InkHandleMode.Keep || stroke.RecognizedText.Length > 0)
-                        _copyMeta[stroke.Id] = (stroke.Mode, stroke.RecognizedText);
-                }
-                var vmPage = vm.Pages.FirstOrDefault(p => p.Number == page.Number);
-                if (vmPage is not null)
-                {
-                    vmPage.TextBoxes.Clear();
-                    foreach (var box in page.TextBoxes)
-                    {
-                        SetDisplay(box, vmPage.DipPerPtX, vmPage.DipPerPtY);
-                        vmPage.TextBoxes.Add(box);
-                    }
-                }
-            }
+            SeedFromModel(vm, loaded.Model);
             vm.Status = $"{loaded.Pages.Count} page(s) reopened — annotations editable.";
         }
         else if (loaded.FallbackInk.Count > 0)
@@ -363,6 +345,110 @@ internal sealed class DocumentSession
         CurrentPath = path;
         CurrentBytes = bytes;
         SetClean();
+    }
+
+    /// <summary>Seeds stash + text boxes from a note model (round-trip or sidecar).</summary>
+    private void SeedFromModel(MainViewModel vm, NoteDocument model)
+    {
+        foreach (var page in model.Pages)
+        {
+            _stash[page.Number] = page.Strokes.ToList();
+            foreach (var stroke in page.Strokes)
+            {
+                if (stroke.Mode != InkHandleMode.Keep || stroke.RecognizedText.Length > 0)
+                    _copyMeta[stroke.Id] = (stroke.Mode, stroke.RecognizedText);
+            }
+            var vmPage = vm.Pages.FirstOrDefault(p => p.Number == page.Number);
+            if (vmPage is not null)
+            {
+                vmPage.TextBoxes.Clear();
+                foreach (var box in page.TextBoxes)
+                {
+                    SetDisplay(box, vmPage.DipPerPtX, vmPage.DipPerPtY);
+                    vmPage.TextBoxes.Add(box);
+                }
+            }
+        }
+    }
+
+    /// <summary>Degraded open: restore ink from the sidecar next to the PDF, if any.</summary>
+    private void SeedFromSidecar(MainViewModel vm, string path, byte[] bytes)
+    {
+        string sidecar = SidecarPath.ForPdf(path);
+        NoteDocument? model = null;
+        bool stale = false;
+        try
+        {
+            if (File.Exists(sidecar))
+            {
+                model = NoteSerializer.FromJson(File.ReadAllText(sidecar));
+                stale = model is not null
+                    && !string.IsNullOrEmpty(model.SourceHash)
+                    && model.SourceHash != NoteSerializer.Sha256Hex(bytes);
+            }
+        }
+        catch
+        {
+            model = null;
+        }
+        if (model is not null)
+            SeedFromModel(vm, model);
+        vm.Status = model is null
+            ? $"{vm.Pages.Count} page(s). This PDF's structure is unreadable — ink is saved alongside the PDF (sidecar)."
+            : stale
+                ? $"{vm.Pages.Count} page(s). Ink restored from the sidecar, but the PDF changed since — check alignment."
+                : $"{vm.Pages.Count} page(s). Ink restored from the sidecar.";
+    }
+
+    /// <summary>Writes the note model next to the PDF (degraded persistence).</summary>
+    private static void WriteSidecar(string pdfPath, NoteDocument model, byte[] baseBytes)
+    {
+        var stamped = model with { SourceHash = NoteSerializer.Sha256Hex(baseBytes) };
+        File.WriteAllText(SidecarPath.ForPdf(pdfPath), NoteSerializer.ToJson(stamped));
+    }
+
+    /// <summary>
+    /// Degraded save: the PDF itself can't carry ink, so the model goes into
+    /// a sidecar next to it. Save As copies the base PDF first, then sidecars.
+    /// </summary>
+    private async Task<string?> SaveDegradedAsync(
+        MainViewModel vm, string? path, Func<string?> promptSaveAs, bool saveAs)
+    {
+        if (CurrentBytes is null)
+        {
+            vm.Status = "Nothing to save — open a PDF first.";
+            return null;
+        }
+        if (saveAs || path is null)
+        {
+            path = saveAs ? promptSaveAs() : CurrentPath;
+            if (path is null)
+                return null;
+        }
+        if (!IsDirty && !saveAs)
+        {
+            vm.Status = "No changes to save.";
+            return null;
+        }
+        var model = CollectModel(vm.Pages);
+        byte[] current = CurrentBytes;
+        string target = path;
+        string? previous = CurrentPath;
+        IReadOnlySet<int>? dirty = _dirtyPages.Count == 0 ? null : _dirtyPages.ToHashSet();
+        await Task.Run(() =>
+        {
+            if (saveAs && !string.Equals(target, previous, StringComparison.OrdinalIgnoreCase))
+                File.WriteAllBytes(target, current);
+            WriteSidecar(target, model, current);
+        }).ConfigureAwait(true);
+        if (saveAs)
+        {
+            CurrentPath = target;
+            CurrentBytes = current;
+        }
+        SetClean(dirty);
+        vm.Status = $"Saved ink alongside {Path.GetFileName(target)} (sidecar) — the PDF itself is unchanged.";
+        return target;
     }
 
     public async Task ExportFlatCopy(
@@ -411,10 +497,7 @@ internal sealed class DocumentSession
             return null;
         }
         if (IsDegraded)
-        {
-            vm.Status = "Can't save ink into this PDF — its structure is unreadable. Ink stays for this session only.";
-            return null;
-        }
+            return await SaveDegradedAsync(vm, path, promptSaveAs, saveAs).ConfigureAwait(true);
         if (!saveAs)
             path ??= CurrentPath;
         if (path is null)
@@ -505,8 +588,23 @@ internal sealed class DocumentSession
 
     public async Task<byte[]> SaveWorkingCopyAsync(MainViewModel vm, AutosaveService autosave)
     {
-        if (CurrentBytes is null || IsDegraded)
+        if (CurrentBytes is null)
             return Array.Empty<byte>();
+        if (IsDegraded)
+        {
+            // Autosave persists through the sidecar (same file a manual save writes).
+            var degradedModel = CollectModel(vm.Pages);
+            byte[] degradedBase = CurrentBytes;
+            string? degradedPath = CurrentPath;
+            IReadOnlySet<int>? degradedDirty = _dirtyPages.Count == 0 ? null : _dirtyPages.ToHashSet();
+            await Task.Run(() =>
+            {
+                if (degradedPath is not null)
+                    WriteSidecar(degradedPath, degradedModel, degradedBase);
+            }).ConfigureAwait(true);
+            SetClean(degradedDirty);
+            return Array.Empty<byte>();
+        }
         var model = CollectModel(vm.Pages);
         byte[] current = CurrentBytes;
         string? source = CurrentPath;

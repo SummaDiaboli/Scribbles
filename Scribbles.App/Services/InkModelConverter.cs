@@ -29,6 +29,9 @@ public sealed class InkModelConverter
 
     public void Clear() => _ids.Clear();
 
+    /// <summary>Capture tolerance: deviations invisible at normal zoom.</summary>
+    public const double SimplifyTolerancePt = 0.5;
+
     public InkStroke ToModel(Stroke stroke, int pageNumber, double dipPerPtX, double dipPerPtY)
     {
         var attrs = stroke.DrawingAttributes;
@@ -40,13 +43,16 @@ public sealed class InkModelConverter
             try { pressure = (float)sp.PressureFactor; } catch { /* default */ }
             points.Add(new StrokePoint(sp.X / dipPerPtX, sp.Y / dipPerPtY, pressure));
         }
+        // Simplify at the model boundary only: the live canvas keeps full
+        // fidelity; files, exports, and thumbnails carry the compact form.
+        var compact = Scribbles.Core.StrokeSimplify.Simplify(points, SimplifyTolerancePt);
         return new InkStroke(
             GetId(stroke),
             pageNumber,
             attrs.IsHighlighter ? ToolKind.Highlighter : ToolKind.Pen,
             InkUnits.ToArgb(a, r, g, b),
             attrs.Width / dipPerPtX,
-            points);
+            compact);
     }
 
     public Stroke FromModel(InkStroke model, double dipPerPtX, double dipPerPtY)

@@ -18,8 +18,8 @@ public partial class SettingsWindow : Window
         ThemeBox.SelectedItem = current.Theme;
         PenBox.ItemsSource = Enum.GetValues<PenKind>();
         PenBox.SelectedItem = current.PenType;
-        SizeBox.ItemsSource = new[] { "Fine (2)", "Medium (3.5)", "Bold (5)" };
-        SizeBox.SelectedIndex = current.PenSizeDip switch { <= 2.5 => 0, >= 4.5 => 2, _ => 1 };
+        SizeBox.ItemsSource = new[] { "Extra fine (1)", "Fine (2)", "Medium (3.5)", "Bold (5)", "Extra bold (8)" };
+        SizeBox.SelectedIndex = current.PenSizeDip switch { <= 1.5 => 0, <= 2.5 => 1, >= 6.5 => 4, >= 4.5 => 3, _ => 2 };
         AutosaveSlider.Value = Math.Clamp(current.AutosaveSeconds, 10, 120);
         CopyableBox.IsChecked = current.ExportCopyableDefault;
         ChannelBox.ItemsSource = new[] { UpdateChannels.Stable, UpdateChannels.Beta };
@@ -35,7 +35,7 @@ public partial class SettingsWindow : Window
 
     private void Ok_Click(object sender, RoutedEventArgs e)
     {
-        double size = SizeBox.SelectedIndex switch { 0 => 2.0, 2 => 5.0, _ => 3.5 };
+        double size = SizeBox.SelectedIndex switch { 0 => 1.0, 1 => 2.0, 3 => 5.0, 4 => 8.0, _ => 3.5 };
         Result = Result with
         {
             Theme = (AppTheme)ThemeBox.SelectedItem,

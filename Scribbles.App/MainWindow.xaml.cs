@@ -53,6 +53,7 @@ public partial class MainWindow : Window
             if (dlg.ShowDialog() == true)
                 await OpenSafelyAsync(dlg.FileName);
         };
+        _vm.RequestFind += (_, _) => OpenFindDialog();
         DataContext = _vm;
         Title = $"Scribbles {AppVersion()}";
         _vm.Status = $"Scribbles {AppVersion()} — open a PDF to start writing. Pen draws, touch scrolls.";
@@ -345,8 +346,8 @@ public partial class MainWindow : Window
         _pen.SetTool((sender as FrameworkElement)?.Tag as string);
         _session.ApplyToolToAll();
         ToggleTextOverlays();
-        ClearAllTextHighlights();
         _textSelections.Clear();
+        RepaintTextOverlays();
         if (_pen.Tool == PenTool.TextSelect)
         {
             int total = _vm.Pages.Sum(p => p.Words.Count);
@@ -363,14 +364,128 @@ public partial class MainWindow : Window
     private void ToggleTextOverlays()
     {
         bool textMode = _pen.Tool is PenTool.TextSelect or PenTool.TextEdit;
+        bool show = textMode || _searchHits.Count > 0;
         foreach (var overlay in CanvasExplorer.FindOverlays(PageScroll))
-            overlay.Visibility = textMode ? Visibility.Visible : Visibility.Collapsed;
+            overlay.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
     }
 
-    private void ClearAllTextHighlights()
+    /// <summary>Repaints selections + search hits on one overlay.</summary>
+    private void RepaintOverlay(Canvas overlay, PageViewModel page)
+    {
+        overlay.Children.Clear();
+        if (_textSelections.TryGetValue(page.Number, out var selected))
+            PaintWordHighlights(overlay, page, selected);
+        PaintSearchHits(overlay, page);
+    }
+
+    /// <summary>Repaints selections + search hits on every realized overlay.</summary>
+    private void RepaintTextOverlays()
     {
         foreach (var overlay in CanvasExplorer.FindOverlays(PageScroll))
-            overlay.Children.Clear();
+        {
+            if (overlay.DataContext is PageViewModel page)
+                RepaintOverlay(overlay, page);
+        }
+    }
+
+    /// <summary>Search hits subtle, current hit strong.</summary>
+    private void PaintSearchHits(Canvas overlay, PageViewModel page)
+    {
+        for (int i = 0; i < _searchHits.Count; i++)
+        {
+            var (hitPage, word) = _searchHits[i];
+            if (hitPage != page.Number)
+                continue;
+            var rect = new System.Windows.Shapes.Rectangle
+            {
+                Fill = AccentBrush(i == _searchIndex ? 0.55 : 0.25),
+                Width = word.Width * page.DipPerPtX,
+                Height = word.Height * page.DipPerPtY,
+            };
+            Canvas.SetLeft(rect, word.X * page.DipPerPtX);
+            Canvas.SetTop(rect, word.Y * page.DipPerPtY);
+            overlay.Children.Add(rect);
+        }
+    }
+
+    // ---------- find in document (Ctrl+F) ----------
+
+    private void OpenFindDialog()
+    {
+        if (_session.CurrentBytes is null)
+        {
+            _vm.Status = "Nothing to search — open a PDF first.";
+            return;
+        }
+        if (_findDialog is not null)
+        {
+            _findDialog.Activate();
+            return;
+        }
+        _findDialog = new FindDialog { Owner = this };
+        _findDialog.QueryChanged += RunSearch;
+        _findDialog.NextRequested += () => StepSearch(+1);
+        _findDialog.PrevRequested += () => StepSearch(-1);
+        _findDialog.FindClosed += () =>
+        {
+            _findDialog = null;
+            ResetSearchState();
+        };
+        _findDialog.Show();
+    }
+
+    private void RunSearch(string query)
+    {
+        _searchHits.Clear();
+        _searchIndex = -1;
+        if (!string.IsNullOrWhiteSpace(query))
+        {
+            foreach (var vm in _vm.Pages)
+            {
+                foreach (var word in PdfTextSearch.Find(vm.Words, query))
+                    _searchHits.Add((vm.Number, word));
+            }
+        }
+        ToggleTextOverlays();
+        if (_searchHits.Count == 0)
+        {
+            _findDialog?.ShowCount(0, 0);
+            RepaintTextOverlays();
+            return;
+        }
+        StepSearch(+1);
+    }
+
+    private void StepSearch(int direction)
+    {
+        if (_searchHits.Count == 0)
+        {
+            _findDialog?.ShowCount(0, 0);
+            return;
+        }
+        _searchIndex = (_searchIndex + direction + _searchHits.Count) % _searchHits.Count;
+        var (page, _) = _searchHits[_searchIndex];
+        _findDialog?.ShowCount(_searchIndex + 1, _searchHits.Count);
+        ScrollToPage(page);
+        Dispatcher.BeginInvoke(
+            System.Windows.Threading.DispatcherPriority.Loaded,
+            new Action(RepaintTextOverlays));
+    }
+
+    private void ResetSearchState()
+    {
+        _searchHits.Clear();
+        _searchIndex = -1;
+        ToggleTextOverlays();
+        RepaintTextOverlays();
+    }
+
+    private void ClearSearch()
+    {
+        var dialog = _findDialog;
+        _findDialog = null;
+        dialog?.Close();
+        ResetSearchState();
     }
 
     // ---------- native text selection (browser-like: select, then copy) ----------
@@ -382,6 +497,11 @@ public partial class MainWindow : Window
 
     /// <summary>Current text selection per page (highlighted until cleared).</summary>
     private readonly Dictionary<int, SelectedText> _textSelections = new();
+
+    /// <summary>Find-all hits across pages, in document order.</summary>
+    private readonly List<(int Page, PdfWord Word)> _searchHits = new();
+    private int _searchIndex = -1;
+    private FindDialog? _findDialog;
 
     private static Brush AccentBrush(double opacity)
     {
@@ -666,8 +786,7 @@ public partial class MainWindow : Window
         string text = string.Join(" ", line.Select(w => w.Text));
         // Remember as the page selection so copy still works after editing focus.
         _textSelections[page.Number] = new SelectedText(line.ToList(), text);
-        overlay.Children.Clear();
-        PaintWordHighlights(overlay, page, _textSelections[page.Number]);
+        RepaintOverlay(overlay, page);
         ShowEditor(overlay, page, text,
             new SelectionRect(minX, minY, maxX - minX, maxY - minY),
             caretOffset: TextCaret.OffsetForX(line.ToList(), xPt));
@@ -761,8 +880,8 @@ public partial class MainWindow : Window
             _textSelections.Remove(_nativePage);
             foreach (var ov in CanvasExplorer.FindOverlays(PageScroll))
             {
-                if ((ov.DataContext as PageViewModel)?.Number == _nativePage)
-                    ov.Children.Clear();
+                if (ov.DataContext is PageViewModel pgm && pgm.Number == _nativePage)
+                    RepaintOverlay(ov, pgm);
             }
             _vm.Status = "Edited in the original text layer.";
             return;
@@ -788,8 +907,8 @@ public partial class MainWindow : Window
         _textSelections.Remove(_nativePage);
         foreach (var ov in CanvasExplorer.FindOverlays(PageScroll))
         {
-            if ((ov.DataContext as PageViewModel)?.Number == _nativePage)
-                ov.Children.Clear();
+            if (ov.DataContext is PageViewModel pgm && pgm.Number == _nativePage)
+                RepaintOverlay(ov, pgm);
         }
         _session.MarkDirty(_nativePage);
         _vm.Status = "Native text edited — baked into the PDF on export.";
@@ -835,12 +954,14 @@ public partial class MainWindow : Window
         DiscardNativeEditor(commit: true);
         var selected = TextSelector.WordSelection(
             page.Words, clickDip.X / page.DipPerPtX, clickDip.Y / page.DipPerPtY);
-        overlay.Children.Clear();
+        if (selected.Words.Count == 0)
+            _textSelections.Remove(page.Number);
+        else
+            _textSelections[page.Number] = selected;
+        RepaintOverlay(overlay, page);
+        overlay.Focus();
         if (selected.Words.Count == 0)
             return;
-        _textSelections[page.Number] = selected;
-        PaintWordHighlights(overlay, page, selected);
-        overlay.Focus();
         _vm.Status = $"Selected “{selected.Text}” — Ctrl+C to copy.";
     }
 
@@ -856,8 +977,7 @@ public partial class MainWindow : Window
         // Live highlight while dragging, browser-style (no box visual).
         var selected = SelectBetween(page, _marqueeStartDip.Value, e.GetPosition(overlay));
         _textSelections[page.Number] = selected;
-        overlay.Children.Clear();
-        PaintWordHighlights(overlay, page, selected);
+        RepaintOverlay(overlay, page);
     }
 
     private void TextOverlay_Up(object sender, MouseButtonEventArgs e)
@@ -885,7 +1005,7 @@ public partial class MainWindow : Window
         if (Math.Abs(end.X - start.X) < 3 && Math.Abs(end.Y - start.Y) < 3)
         {
             _textSelections.Remove(page.Number);
-            overlay.Children.Clear();
+            RepaintOverlay(overlay, page);
             _vm.Status = "Selection cleared. Drag over text to select.";
             return;
         }
@@ -898,8 +1018,7 @@ public partial class MainWindow : Window
 
         var selected = SelectBetween(page, start, end);
         _textSelections[page.Number] = selected;
-        overlay.Children.Clear();
-        PaintWordHighlights(overlay, page, selected);
+        RepaintOverlay(overlay, page);
 
         _vm.Status = selected.Words.Count == 0
             ? "No text under the cursor."
@@ -1306,6 +1425,7 @@ public partial class MainWindow : Window
         {
             RecordCurrentPage();
             _textSelections.Clear();
+            ClearSearch();
             _focusedTextBox = null;
             UpdateFontControls();
             await _session.OpenDocumentAsync(path, _vm);
@@ -1474,9 +1594,27 @@ public partial class MainWindow : Window
         SidebarColumn.Width = new GridLength(collapsed ? 36 : 168);
         Sidebar.Margin = collapsed ? new Thickness(0) : new Thickness(8, 8, 4, 8);
         SidebarTitle.Visibility = collapsed ? Visibility.Collapsed : Visibility.Visible;
+        OutlineToggle.Visibility = collapsed ? Visibility.Collapsed : Visibility.Visible;
         ThumbScroll.Visibility = collapsed ? Visibility.Collapsed : Visibility.Visible;
+        if (collapsed)
+            OutlineTree.Visibility = Visibility.Collapsed;
         SidebarToggle.Content = collapsed ? "»" : "«";
         SidebarToggle.ToolTip = collapsed ? "Expand sidebar" : "Collapse sidebar";
+    }
+
+    private void OutlineToggle_Click(object sender, RoutedEventArgs e)
+    {
+        bool showingOutline = OutlineTree.Visibility != Visibility.Visible;
+        OutlineTree.Visibility = showingOutline ? Visibility.Visible : Visibility.Collapsed;
+        ThumbScroll.Visibility = showingOutline ? Visibility.Collapsed : Visibility.Visible;
+        if (showingOutline && _vm.Outline.Count == 0)
+            _vm.Status = "No bookmarks in this document.";
+    }
+
+    private void Outline_Jump(object sender, MouseButtonEventArgs e)
+    {
+        if ((sender as FrameworkElement)?.DataContext is PdfBookmark bookmark)
+            ScrollToPage(bookmark.PageNumber);
     }
 
     private void Thumb_Open(object sender, MouseButtonEventArgs e)

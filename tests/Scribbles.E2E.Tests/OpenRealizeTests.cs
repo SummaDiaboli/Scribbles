@@ -171,6 +171,15 @@ public sealed class OpenRealizeTests
         return WritePdf(mangled.ToArray());
     }
 
+    private static InkStroke SidecarStroke() => new(
+        "sidecar-s1", 1, ToolKind.Pen, 0xFF445566u, 2.5,
+        new[] { new StrokePoint(50, 60, 0.5f), new StrokePoint(90, 100, 0.5f) });
+
+    private static void WriteSidecar(string pdfPath, NoteDocument model) =>
+        File.WriteAllText(
+            Path.ChangeExtension(pdfPath, ".scribbles.json"),
+            NoteSerializer.ToJson(model));
+
     [Fact]
     public void Open_SharpRejectingPdf_OpensDegraded_WithoutLosingTheSession() => Sta(async () =>
     {
@@ -188,16 +197,67 @@ public sealed class OpenRealizeTests
             await session.OpenDocumentAsync(copy, vm);
             vm.Pages.Count.ShouldBe(1, "degraded open still shows pages");
             session.IsDegraded.ShouldBeTrue("Sharp-rejecting file must flag degraded mode");
-            vm.Status.Contains("session only").ShouldBeTrue("status must explain the limitation");
-
-            string? saved = await session.SaveAsync(vm, null, () => copy + ".out.pdf", saveAs: true);
-            saved.ShouldBeNull("degraded save must refuse, not throw or overwrite");
-            File.Exists(copy + ".out.pdf").ShouldBeFalse("refused save must not write");
-            vm.Status.Contains("unreadable").ShouldBeTrue("refusal must name the cause");
+            vm.Status.Contains("sidecar").ShouldBeTrue("status must explain the limitation");
         }
         finally
         {
             File.Delete(copy);
+        }
+    });
+
+    [Fact]
+    public void DegradedSidecar_RoundTripsInk_ThroughSession() => Sta(async () =>
+    {
+        EnsureThemedApp("Light");
+        var store = new ScribblesPdfStore();
+        string copy = SharpRejectingFixture();
+        byte[] baseBytes = File.ReadAllBytes(copy);
+        // Seed a sidecar as a previous session would have written it.
+        WriteSidecar(copy, new NoteDocument(
+            NoteSerializer.Sha256Hex(baseBytes),
+            new[] { new NotePage(1, 612, 792, new[] { SidecarStroke() }, Array.Empty<TextBoxItem>()) }));
+
+        InkModelConverter NewConverter() => new();
+        DocumentSession NewSession(MainViewModel vm, List<InkCanvas> inks, InkModelConverter converter) => new(
+            store, converter, new StrokeHistory(converter, BoxesOf(vm)), new PenToolbarController(),
+            () => inks, SetBoxesOf(vm));
+        try
+        {
+            var converter = NewConverter();
+            var inks = new List<InkCanvas>();
+            var vm = new MainViewModel(Scribbles.App.App.Themes);
+            var session = NewSession(vm, inks, converter);
+            await session.OpenDocumentAsync(copy, vm);
+            vm.Status.Contains("restored from the sidecar").ShouldBeTrue("ink must come back with status");
+            var restored = session.CollectModel(vm.Pages);
+            restored.Pages[0].Strokes.Count.ShouldBe(1, "sidecar stroke must reach the stash");
+            restored.Pages[0].Strokes[0].Id.ShouldBe("sidecar-s1");
+
+            // Dirty + save rewrites the sidecar (PDF untouched).
+            session.MarkDirty(1);
+            long pdfBefore = new FileInfo(copy).Length;
+            string? saved = await session.SaveAsync(vm, null, () => null, saveAs: false);
+            saved.ShouldBe(copy, "degraded save reports the PDF path for recents");
+            new FileInfo(copy).Length.ShouldBe(pdfBefore, "PDF bytes must not change");
+            var rewritten = NoteSerializer.FromJson(File.ReadAllText(
+                Path.ChangeExtension(copy, ".scribbles.json")));
+            rewritten.ShouldNotBeNull();
+            rewritten!.Pages[0].Strokes.Count.ShouldBe(1, "sidecar must carry the stroke forward");
+
+            // Stale base: sidecar hash mismatch warns but still loads.
+            var staleVm = new MainViewModel(Scribbles.App.App.Themes);
+            var staleSession = NewSession(staleVm, new List<InkCanvas>(), NewConverter());
+            WriteSidecar(copy, new NoteDocument(
+                "deadbeef",
+                new[] { new NotePage(1, 612, 792, new[] { SidecarStroke() }, Array.Empty<TextBoxItem>()) }));
+            await staleSession.OpenDocumentAsync(copy, staleVm);
+            staleVm.Status.Contains("changed since").ShouldBeTrue("hash mismatch must warn");
+            staleSession.CollectModel(staleVm.Pages).Pages[0].Strokes.Count.ShouldBe(1);
+        }
+        finally
+        {
+            File.Delete(copy);
+            File.Delete(Path.ChangeExtension(copy, ".scribbles.json"));
         }
     });
 

@@ -15,9 +15,11 @@ namespace Scribbles.App;
 
 public sealed partial class HomeCard : ObservableObject
 {
-    public string Name { get; init; } = "";
-    public string Path { get; init; } = "";
-    public string Subtitle { get; init; } = "";
+    public string Name { get; set; } = "";
+    public string Path { get; set; } = "";
+    public string Subtitle { get; set; } = "";
+    public HomeDocumentKind Kind { get; set; } = HomeDocumentKind.Pdf;
+    public DateTime ModifiedUtc { get; set; }
 
     [ObservableProperty]
     private ImageSource? _thumbnail;
@@ -72,7 +74,6 @@ public partial class HomeWindow : Window
 
     private async Task RefreshCoreAsync()
     {
-        _cards.Clear();
         var notebooks = NotebookFiles.List()
             .Select(doc => (doc, $"Notebook · {doc.ModifiedUtc:g}"));
         var recents = new List<(HomeDocument, string)>();
@@ -85,21 +86,89 @@ public partial class HomeWindow : Window
             recents.Add((new HomeDocument(Path.GetFileName(full), full, HomeDocumentKind.Pdf, modified),
                 $"PDF · {modified:g}"));
         }
+        // Reuse card objects by path so thumbnails survive refreshes
+        // (returning from the viewer doesn't re-render everything).
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var fresh = new List<HomeCard>();
         foreach (var (doc, subtitle) in MergeEntries(notebooks, recents))
-            _cards.Add(new HomeCard { Name = doc.Name, Path = doc.Path, Subtitle = subtitle });
+        {
+            seen.Add(doc.Path);
+            if (!_cardCache.TryGetValue(doc.Path, out var card))
+            {
+                card = new HomeCard();
+                _cardCache[doc.Path] = card;
+            }
+            card.Name = doc.Name;
+            card.Path = doc.Path;
+            card.Subtitle = subtitle;
+            card.Kind = doc.Kind;
+            card.ModifiedUtc = doc.ModifiedUtc;
+            fresh.Add(card);
+        }
+        foreach (string stale in _cardCache.Keys.Where(k => !seen.Contains(k)).ToList())
+            _cardCache.Remove(stale);
+        _allCards.Clear();
+        foreach (var card in fresh)
+            _allCards.Add(card);
+        ApplyListing();
 
-        StatusText.Text = _cards.Count == 0
-            ? "No documents yet — create a notebook or open a PDF."
-            : $"{_cards.Count} document(s). Click a card to open.";
+        var renderer = new DocnetPdfRenderer();
+        await Task.WhenAll(_allCards
+            .Where(c => c.Thumbnail is null && _loading.Add(c.Path))
+            .Select(async card =>
+            {
+                try
+                {
+                    await LoadCardThumbAsync(renderer, card).ConfigureAwait(false);
+                }
+                finally
+                {
+                    _loading.Remove(card.Path);
+                }
+            }));
+    }
+
+    private readonly ObservableCollection<HomeCard> _allCards = new();
+    private readonly Dictionary<string, HomeCard> _cardCache = new(StringComparer.OrdinalIgnoreCase);
+    private readonly HashSet<string> _loading = new(StringComparer.OrdinalIgnoreCase);
+    private HomeSort _sort = HomeSort.Newest;
+    private HomeKindFilter _kind = HomeKindFilter.All;
+
+    private void SearchBox_TextChanged(object sender, TextChangedEventArgs e) => ApplyListing();
+
+    private void SortBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        _sort = (SortBox.SelectedIndex == 1) ? HomeSort.Name : HomeSort.Newest;
+        ApplyListing();
+    }
+
+    private void KindBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        _kind = KindBox.SelectedIndex switch { 1 => HomeKindFilter.Notebooks, 2 => HomeKindFilter.Pdfs, _ => HomeKindFilter.All };
+        ApplyListing();
+    }
+
+    /// <summary>Sorts + filters the cached cards into the visible list.</summary>
+    private void ApplyListing()
+    {
+        // Combo events fire during InitializeComponent before peers exist.
+        if (StatusText is null || SearchBox is null)
+            return;
+        var docs = _allCards.Select(c => new HomeDocument(c.Name, c.Path, c.Kind, c.ModifiedUtc));
+        var wanted = HomeListing.Apply(docs, _sort, _kind, SearchBox.Text);
+        _cards.Clear();
+        foreach (var doc in wanted)
+        {
+            if (_cardCache.TryGetValue(doc.Path, out var card))
+                _cards.Add(card);
+        }
+        StatusText.Text = _cards.Count == _allCards.Count
+            ? $"{_cards.Count} document(s). Click a card to open."
+            : $"{_cards.Count} of {_allCards.Count} document(s).";
+        if (_allCards.Count == 0)
+            StatusText.Text = "No documents yet — create a notebook or open a PDF.";
         if (App.PendingUpdate is not null)
             StatusText.Text += $" Update {App.PendingUpdate.TargetFullRelease.Version} downloaded — open a document, then File → Restart to apply update.";
-
-        // Thumbnails lazily, off the UI thread (frozen bitmaps cross threads).
-        // Cards load concurrently: file I/O + managed parsing run in parallel
-        // while native rasters serialize on the PDFium gate. Saved ink is
-        // composited on the UI thread (WPF visuals need STA).
-        var renderer = new DocnetPdfRenderer();
-        await Task.WhenAll(_cards.ToList().Select(card => LoadCardThumbAsync(renderer, card)));
     }
 
     private async Task LoadCardThumbAsync(DocnetPdfRenderer renderer, HomeCard card)
