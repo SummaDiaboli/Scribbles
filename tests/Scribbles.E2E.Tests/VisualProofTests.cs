@@ -149,7 +149,12 @@ public sealed class VisualProofTests
             dialog!.Focus();
 
             var sea = Retry(() => dialog.FindFirstDescendant(cf => cf.ByAutomationId("SvField")));
-            sea.ShouldNotBeNull("SV sea should be automatable");
+            if (sea is null)
+            {
+                var tree = string.Join(" | ", dialog.FindAllDescendants().Take(60)
+                    .Select(e => $"{e.ControlType}:{e.Name}[{e.AutomationId}]"));
+                throw new Xunit.Sdk.XunitException("SV sea should be automatable. Tree: " + tree);
+            }
             var r = sea!.BoundingRectangle;
             var start = new System.Drawing.Point((int)(r.X + r.Width * 0.2), (int)(r.Y + r.Height * 0.8));
             var end = new System.Drawing.Point((int)(r.X + r.Width * 0.8), (int)(r.Y + r.Height * 0.2));

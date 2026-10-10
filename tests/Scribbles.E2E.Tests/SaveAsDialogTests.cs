@@ -40,7 +40,23 @@ public sealed class SaveAsDialogTests
                 window.UpdateLayout();
                 window.OnLoadedInternal();
                 window.Open(copy);
-                await Task.Delay(3000);
+
+                // The runner is slower than dev: wait for the open to land
+                // (status names the page count) instead of a fixed delay.
+                var vmField = typeof(Scribbles.App.MainWindow).GetField(
+                    "_vm", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                string Status()
+                {
+                    dynamic? vm = vmField?.GetValue(window);
+                    return vm?.Status as string ?? "";
+                }
+                bool opened = false;
+                for (int i = 0; i < 600 && !opened; i++)
+                {
+                    await Task.Delay(100);
+                    opened = Status().Contains("page(s)");
+                }
+                opened.ShouldBeTrue($"document must finish opening (status was: {Status()})");
 
                 var items = new List<MenuItem>();
                 var queue = new Queue<DependencyObject>();
@@ -60,7 +76,7 @@ public sealed class SaveAsDialogTests
                     saveAs.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent))));
 
                 IntPtr dlg = IntPtr.Zero;
-                for (int i = 0; i < 100 && dlg == IntPtr.Zero; i++)
+                for (int i = 0; i < 300 && dlg == IntPtr.Zero; i++)
                 {
                     await Task.Delay(100);
                     dlg = FindWindow("#32770", "Save As");

@@ -71,7 +71,12 @@ public sealed class SettingsDialogTests
             settingsItem!.Click();
 
             var dialog = Retry(() => window.FindFirstChild(cf => cf.ByControlType(ControlType.Window).And(cf.ByName("Settings")))?.AsWindow(), attempts: 40);
-            dialog.ShouldNotBeNull("Settings dialog should open (used to crash here)");
+            if (dialog is null)
+            {
+                var tree = string.Join(" | ", window.FindAllDescendants().Take(60)
+                    .Select(e => $"{e.ControlType}:{e.Name}"));
+                throw new Xunit.Sdk.XunitException("Settings dialog should open. Tree: " + tree);
+            }
             dialog!.Close();
         }
         finally
